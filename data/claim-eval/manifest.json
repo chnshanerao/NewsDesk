@@ -1,0 +1,19 @@
+{
+  "dataset_version": "claim-relations-v1",
+  "seed": 20260906,
+  "pairs": 300,
+  "snapshot_hash": "73474ad3c89cc2bdad243841d7b3f163b2861de6bc33ab74e5f44cc9be6fdff6",
+  "predictions_hash": "1de624e88bf5f5faad637ec18f4763c136f21a7a353115d96c7e5d8076e92b9a",
+  "labels": [
+    "refute",
+    "support",
+    "unknown"
+  ],
+  "relation_distribution": {
+    "refute": 100,
+    "support": 100,
+    "unknown": 100
+  },
+  "ready_for_annotation": true,
+  "human_adjudicated": false
+}

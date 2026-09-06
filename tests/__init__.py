@@ -1,0 +1,1 @@
+"""NEWSDESK regression tests."""

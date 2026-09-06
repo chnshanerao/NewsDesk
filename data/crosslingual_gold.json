@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "description": "Reviewed bilingual template corpus: 15 entities x 10 event types; 150 positive and 150 hard-negative labeled pairs.",
+  "expected_pairs": 300,
+  "entities": [
+    {"zh":"美联储","en":"Federal Reserve"}, {"zh":"欧洲央行","en":"European Central Bank"},
+    {"zh":"日本央行","en":"Bank of Japan"}, {"zh":"中国人民银行","en":"People's Bank of China"},
+    {"zh":"苹果公司","en":"Apple"}, {"zh":"微软","en":"Microsoft"},
+    {"zh":"谷歌","en":"Google"}, {"zh":"英伟达","en":"Nvidia"},
+    {"zh":"特斯拉","en":"Tesla"}, {"zh":"亚马逊","en":"Amazon"},
+    {"zh":"脸书母公司","en":"Meta Platforms"}, {"zh":"三星电子","en":"Samsung Electronics"},
+    {"zh":"台积电","en":"TSMC"}, {"zh":"比亚迪","en":"BYD"},
+    {"zh":"世界卫生组织","en":"World Health Organization"}
+  ],
+  "events": [
+    {"zh":"{entity}宣布降息25个基点","en":"{entity} cuts interest rates by 25 basis points"},
+    {"zh":"{entity}因违规被处以罚款","en":"{entity} fined for violations"},
+    {"zh":"{entity}面临新的诉讼","en":"{entity} faces a new lawsuit"},
+    {"zh":"{entity}受到监管调查","en":"{entity} faces a regulatory investigation"},
+    {"zh":"{entity}宣布一项收购交易","en":"{entity} announces an acquisition"},
+    {"zh":"{entity}宣布新一轮裁员","en":"{entity} announces a new round of layoffs"},
+    {"zh":"{entity}发布季度财报","en":"{entity} reports quarterly earnings"},
+    {"zh":"{entity}推出新产品","en":"{entity} launches a new product"},
+    {"zh":"{entity}产品遭到禁售","en":"{entity} product faces a sales ban"},
+    {"zh":"{entity}的新方案获得批准","en":"{entity} proposal wins approval"}
+  ]
+}

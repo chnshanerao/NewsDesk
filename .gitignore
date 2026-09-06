@@ -1,0 +1,23 @@
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Runtime state and secrets
+data/admin-token
+data/*.db
+data/*.db-*
+data/backups/
+data/logs/
+data/recovery-status.json
+
+# Local process state
+*.pid
+*.sock
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/

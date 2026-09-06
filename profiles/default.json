@@ -1,0 +1,96 @@
+{
+  "_doc": "个人关注画像。决定『相关性』分：终端最终排序 = 可信度 × 相关性 × 时效。负向词用来把娱乐八卦压到噪音区。",
+  "name": "默认画像：投资 / 择业 / 个人发展",
+
+  "topics": {
+    "macro": {
+      "label": "宏观与数据",
+      "weight": 1.0,
+      "keywords": ["GDP", "CPI", "PPI", "PMI", "社融", "货币政策", "财政", "降准", "降息", "LPR", "统计局", "央行", "国常会", "就业率", "失业率", "居民收入", "进出口", "顺差", "汇率", "人民币", "债券", "国债", "Federal Reserve", "central bank", "interest rate", "inflation", "unemployment", "employment", "monetary policy", "fiscal policy", "economic growth", "Treasury", "bond yield", "exchange rate"]
+    },
+    "policy": {
+      "label": "政策与监管",
+      "weight": 0.95,
+      "keywords": ["国务院", "发改委", "证监会", "银保监", "工信部", "人社部", "教育部", "政策", "条例", "办法", "通知", "试点", "补贴", "税收", "个税", "社保", "公积金", "户籍", "医保", "监管", "处罚", "立法", "regulation", "regulator", "legislation", "executive order", "sanctions", "antitrust", "trade policy", "tariff", "subsidy", "tax policy"]
+    },
+    "market": {
+      "label": "市场与投资",
+      "weight": 0.95,
+      "keywords": ["A股", "港股", "美股", "上证", "深证", "创业板", "科创板", "北交所", "基金", "ETF", "净值", "IPO", "定增", "回购", "分红", "财报", "业绩预告", "营收", "净利润", "估值", "市盈率", "黄金", "原油", "楼市", "房价", "利率", "理财", "REITs", "stock market", "earnings", "revenue", "profit", "valuation", "dividend", "buyback", "Treasury yield", "oil price", "gold price", "housing market", "SEC"]
+    },
+    "tech": {
+      "label": "科技综合",
+      "weight": 0.85,
+      "keywords": ["AI", "人工智能", "大模型", "算力", "芯片", "半导体", "GPU", "开源", "云计算", "机器人", "自动驾驶", "新能源", "电池", "光伏", "储能", "量子", "生物医药", "创新药", "具身智能", "AGI", "Agent", "artificial intelligence", "large language model", "semiconductor", "chip", "cloud computing", "robotics", "autonomous driving", "renewable energy", "battery", "quantum computing", "biotech"]
+    },
+    "ai_research": {
+      "label": "AI研究前沿",
+      "weight": 1.0,
+      "keywords": ["arXiv", "paper", "research", "benchmark", "dataset", "scaling law", "reasoning", "multimodal", "alignment", "interpretability", "reinforcement learning", "论文", "研究", "基准测试", "数据集", "扩展定律", "推理模型", "多模态", "对齐", "可解释性", "强化学习"]
+    },
+    "ai_models": {
+      "label": "模型与产品",
+      "weight": 1.0,
+      "keywords": ["GPT", "Claude", "Gemini", "Llama", "Qwen", "DeepSeek", "Copilot", "ChatGPT", "foundation model", "language model", "vision model", "model release", "API", "context window", "token", "模型发布", "基础模型", "语言模型", "视觉模型", "上下文窗口", "智能体"]
+    },
+    "ai_compute": {
+      "label": "算力与芯片",
+      "weight": 0.98,
+      "keywords": ["GPU", "NPU", "TPU", "HBM", "CUDA", "inference", "training cluster", "data center", "foundry", "wafer", "EUV", "算力", "推理芯片", "训练集群", "数据中心", "晶圆", "先进制程", "光刻机", "高带宽内存"]
+    },
+    "ai_open_source": {
+      "label": "AI开源生态",
+      "weight": 0.92,
+      "keywords": ["open source", "open weight", "GitHub", "Hugging Face", "Apache 2.0", "MIT license", "model weights", "repository", "开源", "开放权重", "模型权重", "代码仓库", "许可证"]
+    },
+    "ai_governance": {
+      "label": "AI治理与安全",
+      "weight": 1.0,
+      "keywords": ["AI Act", "AI safety", "model safety", "frontier model", "red team", "evaluation", "compute governance", "copyright", "deepfake", "人工智能法案", "模型安全", "前沿模型", "红队", "安全评估", "算法备案", "生成式人工智能", "深度伪造", "版权"]
+    },
+    "ai_industry": {
+      "label": "AI产业",
+      "weight": 0.95,
+      "keywords": ["AI startup", "funding round", "AI revenue", "AI capex", "AI infrastructure", "enterprise AI", "AI adoption", "AI agent", "人工智能创业", "融资", "AI收入", "AI资本开支", "AI基础设施", "企业AI", "AI落地", "AI智能体"]
+    },
+    "career": {
+      "label": "就业与择业",
+      "weight": 1.0,
+      "keywords": ["招聘", "校招", "裁员", "离职", "薪资", "薪酬", "涨薪", "岗位", "人才", "编制", "考公", "考研", "求职", "灵活就业", "劳动合同", "996", "职业发展", "转型", "技能", "培训", "毕业生", "就业市场", "用工", "hiring", "layoff", "job market", "salary", "wage", "career", "workforce", "labor market", "graduate jobs", "skills training"]
+    },
+    "industry": {
+      "label": "产业与公司",
+      "weight": 0.8,
+      "keywords": ["产能", "订单", "涨价", "降价", "并购", "重组", "破产", "出海", "供应链", "产业链", "扩产", "投产", "关停", "库存", "毛利", "市占率", "垄断", "反倾销", "关税", "merger", "acquisition", "bankruptcy", "supply chain", "capacity", "inventory", "market share", "manufacturing", "export controls"]
+    },
+    "risk": {
+      "label": "风险预警",
+      "weight": 1.0,
+      "keywords": ["爆雷", "违约", "退市", "立案", "调查", "诈骗", "非法集资", "跑路", "挤兑", "停兑", "风险提示", "预警", "召回", "事故", "泄露", "制裁", "断供", "default", "fraud", "investigation", "enforcement", "recall", "data breach", "bank run", "delisting", "warning", "crisis"]
+    },
+    "world": {
+      "label": "国际",
+      "weight": 0.6,
+      "keywords": ["美联储", "加息", "欧央行", "地缘", "冲突", "选举", "峰会", "协定", "出口管制", "实体清单", "United Nations", "European Union", "NATO", "election", "conflict", "ceasefire", "summit", "diplomacy", "geopolitical", "trade agreement", "export control"]
+    },
+    "society": {
+      "label": "社会民生",
+      "weight": 0.45,
+      "keywords": ["物价", "水电", "燃气", "交通", "高铁", "教育", "医疗", "养老", "生育", "天气", "台风", "地震", "healthcare", "education", "pension", "cost of living", "public health", "climate", "earthquake", "hurricane"]
+    }
+  },
+
+  "noise_keywords": [
+    "明星", "网红", "顶流", "官宣", "恋情", "分手", "离婚", "塌房", "撕逼", "开撕", "回怼", "怒斥",
+    "综艺", "选秀", "剧组", "杀青", "票房", "首映", "打歌", "应援", "粉丝团", "热搜第一",
+    "球星", "德比", "转会", "夺冠热门", "彩票", "星座", "运势", "生肖", "算命",
+    "穿搭", "打卡", "探店", "美食教程", "减肥食谱", "养生秘诀", "偏方"
+  ],
+
+  "muted_keywords": [],
+
+  "boost_keywords": ["普通人", "老百姓", "居民", "家庭", "储户", "购房者", "打工人", "中小企业"],
+
+  "min_credibility": 40,
+  "min_relevance": 0.12
+}
