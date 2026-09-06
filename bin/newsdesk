@@ -1,0 +1,329 @@
+#!/usr/bin/env python3
+"""newsdesk CLI —— 个人新闻终端。
+
+  newsdesk ingest              抓取全部启用信源并入库
+  newsdesk score               重新聚类+打分（不联网）
+  newsdesk run [--llm]         抓取 → 聚类 → 打分 →（可选）LLM 甄别
+  newsdesk top [-n 25]         终端里直接看事件流
+  newsdesk digest [-o FILE]    生成 Markdown 简报
+  newsdesk serve [-p 8899]     启动 Web 终端
+  newsdesk sources             信源清单与健康状态
+  newsdesk doctor              体检：探测所有信源可达性 + LLM 连通性
+  newsdesk explain <id>        看某个事件的评分明细
+"""
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from newsdesk import benchmark, config, digest, evaluation, fetch, pipeline, quality, server, store, verify_llm  # noqa: E402
+from newsdesk.normalize import fmt_ts  # noqa: E402
+
+
+def _ctx(args):
+    reg = config.load_sources()
+    profile = config.load_profile(getattr(args, "profile", "default"))
+    conn = store.connect()
+    store.init(conn)
+    return reg, profile, conn
+
+
+def cmd_ingest(args):
+    reg, profile, conn = _ctx(args)
+    only = args.source.split(",") if args.source else None
+    r = pipeline.ingest(conn, reg, only=only)
+    print(f"抓取 {r['n_fetched']} 条，新增 {r['n_new']} 条")
+
+
+def cmd_score(args):
+    reg, profile, conn = _ctx(args)
+    r = pipeline.rescore(conn, reg, profile, window_h=args.window)
+    print(f"事件 {r['n_clusters']} 个（来自 {r['n_items']} 条稿件）")
+
+
+def cmd_run(args):
+    reg, profile, conn = _ctx(args)
+    only = args.source.split(",") if args.source else None
+    r = pipeline.run(conn, reg, profile, use_llm=args.llm, only=only,
+                     window_h=args.window)
+    print(f"\n完成：{r['n_fetched']} 条 / 新增 {r['n_new']} / 事件 {r['n_clusters']} 个"
+          f" / LLM {r['llm']['ok']} 条 / 耗时 {r['elapsed']}s")
+
+
+def cmd_top(args):
+    reg, profile, conn = _ctx(args)
+    print(digest.terminal_view(conn, profile, limit=args.n, min_cred=args.min_cred))
+
+
+def cmd_digest(args):
+    reg, profile, conn = _ctx(args)
+    md = digest.briefing(conn, profile, hours=args.hours, top=args.top)
+    if args.out:
+        Path(args.out).write_text(md, encoding="utf-8")
+        print(f"已写入 {args.out}（{len(md)} 字）")
+    else:
+        print(md)
+
+
+def cmd_serve(args):
+    reg, profile, conn = _ctx(args)
+    conn.close()
+    server.serve(reg, profile, host=args.host, port=args.port, use_llm=args.llm)
+
+
+def cmd_sources(args):
+    reg, profile, conn = _ctx(args)
+    health = {h["source_id"]: h for h in store.health(conn)}
+    print(f"{'ID':<18}{'层级':<6}{'集团':<12}{'启用':<6}{'状态':<22}{'条数':<6}名称")
+    print("-" * 104)
+    for s in sorted(reg["sources"], key=lambda x: (x["tier"], x["id"])):
+        h = health.get(s["id"])
+        if h is None:
+            st = "未抓取"
+        elif h["last_error"]:
+            st = f"ERR {h['last_error']}"[:20]
+        else:
+            st = f"OK {fmt_ts(h['last_ok_ts'])}"
+        print(f"{s['id']:<18}T{s['tier']:<5}{s.get('group', '-'):<12}"
+              f"{'✓' if s.get('enabled', True) else '✗':<6}{st:<22}"
+              f"{(h['last_items'] if h else 0):<6}{s['name']}")
+
+
+def cmd_doctor(args):
+    reg, profile, conn = _ctx(args)
+    print("▸ 信源可达性（含未启用的）")
+    for s in reg["sources"]:
+        res = fetch.fetch_source(s, reg)
+        mark = "OK " if res["ok"] else "ERR"
+        print(f"  [{mark}] T{s['tier']} {s['id']:<18} {res['n_items']:>3} 条 "
+              f"{res['ms']:>5}ms  {res['last_error'] or ''}")
+    print("\n▸ LLM 甄别层")
+    try:
+        r = verify_llm._post({
+            "model": config.LLM_MODEL,
+            "messages": [{"role": "user", "content": "只回复两个字：可用"}],
+            "max_tokens": 16,
+        }, timeout=40)
+        print(f"  [OK ] {config.LLM_MODEL} → "
+              f"{r['choices'][0]['message']['content'].strip()[:20]}")
+    except Exception as e:
+        print(f"  [ERR] {config.LLM_MODEL} → {type(e).__name__}: {e}")
+    print(f"\n▸ 数据库 {config.DB_PATH}")
+    print(f"  items={conn.execute('SELECT COUNT(*) c FROM items').fetchone()['c']} "
+          f"clusters={conn.execute('SELECT COUNT(*) c FROM clusters').fetchone()['c']}")
+
+
+def cmd_audit(args):
+    """信源体检：不看它『能不能连』，看它『给的是不是新鲜内容』。
+
+    中文互联网的 RSS 大量处于『能 200、内容冻结在几年前』的僵尸状态
+    （新华网冻结在 2022、人民网停在 2025-06）。只测连通性会被这类信源污染整个终端。
+    """
+    from newsdesk.normalize import now_ts
+    reg, profile, conn = _ctx(args)
+    now = now_ts()
+    srcs = reg["sources"] if args.all else [s for s in reg["sources"]
+                                           if s.get("enabled", True)]
+    print(f"{'ID':<18}{'T':<3}{'条数':>5}{'有日期':>7}{'最新':>13}{'距今':>9}  裁决")
+    print("-" * 92)
+    verdicts = {}
+    for s in sorted(srcs, key=lambda x: (x["tier"], x["id"])):
+        res = fetch.fetch_source(s, reg)
+        if not res["ok"]:
+            v = f"❌ 不可达 {res['last_error']}"
+        elif res["n_items"] == 0:
+            v = "❌ 解析出 0 条（格式变了？）"
+        else:
+            dated = res["n_items"] - res.get("n_undated", 0)
+            newest = res.get("newest_ts")
+            if not newest:
+                v = ("⚠ 无日期，已按 assume_fresh 处理"
+                     if s.get("assume_fresh") else "❌ 全无日期 → 内容不参与时效窗口")
+            else:
+                age_h = (now - newest) / 3600
+                if age_h <= 36:
+                    v = "✅ 新鲜"
+                elif age_h <= 24 * 7:
+                    v = f"⚠ 偏慢（最新 {age_h/24:.1f} 天前）"
+                elif age_h <= 24 * 90:
+                    v = f"⚠ 停更 {age_h/24:.0f} 天"
+                else:
+                    v = f"❌ 僵尸 feed（冻结 {age_h/24/365:.1f} 年）"
+        newest = res.get("newest_ts")
+        age = f"{(now - newest)/3600:.1f}h" if newest else "—"
+        print(f"{s['id']:<18}{s['tier']:<3}{res['n_items']:>5}"
+              f"{res['n_items'] - res.get('n_undated', 0):>7}"
+              f"{fmt_ts(newest):>13}{age:>9}  {v}")
+        verdicts[s["id"]] = v
+    bad = [k for k, v in verdicts.items() if v.startswith("❌")]
+    if bad:
+        print(f"\n建议把这些信源 enabled 改为 false（或修解析器）: {', '.join(bad)}")
+
+
+def cmd_explain(args):
+    reg, profile, conn = _ctx(args)
+    row = store.get_cluster(conn, args.cluster_id)
+    if not row:
+        sys.exit(f"没有这个事件: {args.cluster_id}")
+    c = dict(row)
+    bd = json.loads(c["breakdown"] or "{}")
+    print(f"事件 {c['id']}\n标题 {c['headline']}\n"
+          f"可信度 {c['cred']} ({c['cred_code']}/{c['cred_label']})  "
+          f"相关性 {c['relevance']}  排序分 {c['rank']}")
+    print("-" * 70)
+    for k in ("authority", "corroboration", "content", "timing"):
+        d = bd.get(k, {})
+        print(f"{k:<15} {d.get('score', 0):>5}  × {d.get('weight', 0):<5} "
+              f"→ {round(d.get('score', 0) * d.get('weight', 0) * 100, 1):>5}  "
+              f"{d.get('note', '')}")
+        for sig in d.get("positive", []):
+            print(f"{'':<15} + {sig}")
+        for sig in d.get("negative", []):
+            print(f"{'':<15} - {sig}")
+    print(f"\n相关性明细 {json.dumps(bd.get('relevance', {}), ensure_ascii=False)}")
+    if c["llm"]:
+        print("\nLLM 甄别:")
+        print(json.dumps(json.loads(c["llm"]), ensure_ascii=False, indent=2))
+    print(f"\n成员稿件 ({c['n_items']} 篇 / {c['n_groups']} 个独立集团):")
+    for it in store.cluster_items(conn, c["id"]):
+        print(f"  T{it['tier']} [{it['grp']:<10}] {fmt_ts(it['published_ts'])} "
+              f"{it['title'][:56]}")
+
+
+def cmd_backup(args):
+    destination = Path(args.out).expanduser() if args.out else None
+    path = store.backup_database(destination=destination, keep=None if destination else args.keep)
+    print(f"备份完成并通过完整性校验：{path}")
+
+
+def cmd_recovery_drill(args):
+    backup = Path(args.backup).expanduser() if args.backup else store.backup_database()
+    result = store.recovery_drill(backup)
+    status = {**result, "verified_ts": int(time.time())}
+    status_path = config.DATA_DIR / "recovery-status.json"
+    status_path.write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
+    status_path.chmod(0o600)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def cmd_schema(args):
+    conn = store.connect()
+    try:
+        print(json.dumps(store.schema_status(conn), ensure_ascii=False, indent=2))
+    finally:
+        conn.close()
+
+
+def cmd_quality(args):
+    reg, profile, conn = _ctx(args)
+    try:
+        result = quality.scorecard(conn, reg)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if args.strict and result["counts"]["fail"]:
+            raise SystemExit(1)
+    finally:
+        conn.close()
+
+
+def cmd_evaluate_clustering(args):
+    items, pairs = evaluation.load_gold(Path(args.dataset))
+    result = evaluation.evaluate(items, pairs)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if args.strict and (result["pair_precision"] < .95 or
+                        result["pair_recall"] < .80 or result["bcubed_f1"] < .88):
+        raise SystemExit(1)
+
+
+def cmd_benchmark(args):
+    reg, profile, conn = _ctx(args)
+    try:
+        result = benchmark.run(conn, iterations=args.iterations)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if args.strict and not result["pass"]:
+            raise SystemExit(1)
+    finally:
+        conn.close()
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="newsdesk", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--profile", default="default", help="关注画像名（profiles/*.json）")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("ingest", help="抓取信源")
+    p.add_argument("--source", help="只抓指定 id，逗号分隔")
+    p.set_defaults(func=cmd_ingest)
+
+    p = sub.add_parser("score", help="重新聚类打分")
+    p.add_argument("--window", type=int, help="时间窗口（小时）")
+    p.set_defaults(func=cmd_score)
+
+    p = sub.add_parser("run", help="全流程")
+    p.add_argument("--llm", action="store_true", help="开启 LLM 甄别层")
+    p.add_argument("--source", help="只抓指定 id")
+    p.add_argument("--window", type=int)
+    p.set_defaults(func=cmd_run)
+
+    p = sub.add_parser("top", help="终端事件流")
+    p.add_argument("-n", type=int, default=25)
+    p.add_argument("--min-cred", dest="min_cred", type=float, default=0.0)
+    p.set_defaults(func=cmd_top)
+
+    p = sub.add_parser("digest", help="Markdown 简报")
+    p.add_argument("--hours", type=int, default=24)
+    p.add_argument("--top", type=int, default=12)
+    p.add_argument("-o", "--out")
+    p.set_defaults(func=cmd_digest)
+
+    p = sub.add_parser("serve", help="启动 Web 终端")
+    p.add_argument("-p", "--port", type=int, default=config.SERVER_PORT)
+    p.add_argument("--host", default=config.SERVER_HOST)
+    p.add_argument("--llm", action="store_true", help="页面刷新时默认带 LLM 甄别")
+    p.set_defaults(func=cmd_serve)
+
+    sub.add_parser("sources", help="信源清单").set_defaults(func=cmd_sources)
+    sub.add_parser("doctor", help="连通性体检 + LLM 检查").set_defaults(func=cmd_doctor)
+
+    p = sub.add_parser("audit", help="信源新鲜度审计（揪出僵尸 feed）")
+    p.add_argument("--all", action="store_true", help="含未启用信源")
+    p.set_defaults(func=cmd_audit)
+
+    p = sub.add_parser("explain", help="评分明细")
+    p.add_argument("cluster_id")
+    p.set_defaults(func=cmd_explain)
+
+    p = sub.add_parser("backup", help="在线备份 SQLite 并执行完整性校验")
+    p.add_argument("-o", "--out", help="指定备份文件；默认写入 data/backups")
+    p.add_argument("--keep", type=int, default=config.BACKUP_KEEP, help="默认目录保留份数")
+    p.set_defaults(func=cmd_backup)
+
+    p = sub.add_parser("recovery-drill", help="隔离恢复备份并校验结构和关键数据")
+    p.add_argument("backup", nargs="?", help="备份路径；省略则先创建在线备份")
+    p.set_defaults(func=cmd_recovery_drill)
+
+    sub.add_parser("schema", help="显示数据库迁移版本").set_defaults(func=cmd_schema)
+
+    p = sub.add_parser("quality", help="输出机器可读的产品质量门禁")
+    p.add_argument("--strict", action="store_true", help="有必需门禁失败时返回非零")
+    p.set_defaults(func=cmd_quality)
+
+    p = sub.add_parser("evaluate-clustering", help="运行跨语言聚类金标评测")
+    p.add_argument("--dataset", default=str(config.DATA_DIR / "crosslingual_gold.json"))
+    p.add_argument("--strict", action="store_true", help="低于质量门槛时返回非零")
+    p.set_defaults(func=cmd_evaluate_clustering)
+
+    p = sub.add_parser("benchmark", help="运行本地搜索性能门禁")
+    p.add_argument("--iterations", type=int, default=30)
+    p.add_argument("--strict", action="store_true", help="p95 超过 250ms 时返回非零")
+    p.set_defaults(func=cmd_benchmark)
+
+    args = ap.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
