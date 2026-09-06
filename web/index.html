@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEWSDESK — 个人新闻终端</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><b>NEWSDESK</b><span>信源甄别终端</span></div>
+  <div class="tabs">
+    <button class="tab on" data-view="signal">值得看<kbd>1</kbd></button>
+    <button class="tab" data-view="unverified">待证<kbd>2</kbd></button>
+    <button class="tab" data-view="noise">噪音<kbd>3</kbd></button>
+  </div>
+  <div class="mode-switch" role="group" aria-label="新闻浏览模式">
+    <button class="mode-btn" data-mode="public" title="不使用个人相关性门槛">公共全景</button>
+    <button class="mode-btn on" data-mode="personal" title="按当前个人画像筛选">为我推荐</button>
+  </div>
+  <input id="q" class="search" placeholder="搜索；支持 source: lang: topic: asset: cred: after:  /" autocomplete="off">
+  <div class="spacer"></div>
+  <button class="btn" id="btn-sources">信源 <kbd>s</kbd></button>
+  <button class="btn ai-radar-btn" id="btn-ai-radar">AI 雷达 <kbd>i</kbd></button>
+  <button class="btn research-btn" id="btn-research">研究 <kbd>e</kbd></button>
+  <button class="btn" id="btn-quality">质量 <kbd>q</kbd></button>
+  <a class="btn" href="/report.html" target="_blank" rel="noopener">对比报告</a>
+  <button class="btn" id="btn-digest">简报 <kbd>d</kbd></button>
+  <button class="btn" id="btn-alerts">监控 <span class="alert-badge" id="alert-badge" hidden>0</span> <kbd>a</kbd></button>
+  <button class="btn" id="btn-watchlist">观察列表 <kbd>w</kbd></button>
+  <button class="btn" id="btn-help">?</button>
+  <button class="btn command-trigger" id="btn-command">命令 <kbd>Ctrl K</kbd></button>
+  <button class="btn" id="btn-refresh">刷新 <kbd>r</kbd></button>
+  <div class="clock" id="clock">--:--:--</div>
+</div>
+
+<div class="mode-banner" id="mode-banner"></div>
+<div class="query-summary" id="query-summary" hidden></div>
+<div class="market-strip" id="markets"><span class="market-loading">市场脉搏加载中…</span></div>
+
+<div class="kpis" id="kpis"></div>
+
+<div class="main">
+  <div class="side">
+    <h4>主题</h4>
+    <div id="topics"></div>
+    <h4>时间窗</h4>
+    <div id="hours"></div>
+    <h4>语言</h4>
+    <div id="languages"></div>
+    <h4>最低可信度 <span class="val" id="mc-val">0</span></h4>
+    <input type="range" class="slider" id="mc" min="0" max="90" step="5" value="0">
+    <h4>排序</h4>
+    <div id="orders"></div>
+    <h4>证据分级</h4>
+    <div class="note" style="line-height:1.7">
+      <span class="badge b-CONFIRMED">✅ ≥75</span> 多源印证<br>
+      <span class="badge b-LIKELY">🟢 ≥60</span> 证据较完整<br>
+      <span class="badge b-SINGLE">🟡 ≥40</span> 单源待证<br>
+      <span class="badge b-LOW">🔴 &lt;40</span> 证据弱/情绪化
+    </div>
+  </div>
+
+  <div class="stream" id="stream">
+    <div class="stream-head">
+      <span id="count">加载中…</span>
+      <span class="hint"><kbd>j</kbd>/<kbd>k</kbd> 上下 · <kbd>o</kbd> 打开原文 · <kbd>x</kbd> 明细</span>
+    </div>
+    <div id="rows"></div>
+  </div>
+
+  <div class="detail empty" id="detail">
+    选中一条事件<br>查看来源构成、证据与未知项
+  </div>
+</div>
+
+<div class="command-palette" id="command-palette" hidden>
+  <div class="command-box" role="dialog" aria-modal="true" aria-label="命令面板">
+    <div class="command-input-row"><span>&gt;</span><input id="command-q" placeholder="输入命令或筛选操作…" autocomplete="off"><kbd>Esc</kbd></div>
+    <div class="command-list" id="command-list"></div>
+    <div class="command-foot">↑↓ 选择 · Enter 执行 · Ctrl K 开关</div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
