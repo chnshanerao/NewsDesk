@@ -17,6 +17,8 @@ OPPOSITES = [
     ({"达成", "签署", "同意", "agrees", "signed", "reached"},
      {"破裂", "取消", "退出", "collapses", "cancelled", "withdraws"}),
 ]
+UNCERTAINTY = {"可能", "预计", "或将", "据称", "传闻", "尚未", "待确认",
+               "may", "might", "could", "reportedly", "rumor", "expected"}
 
 
 def _similar(a: str, b: str) -> float:
@@ -27,6 +29,48 @@ def _similar(a: str, b: str) -> float:
 def _support(claim: str, item: dict) -> bool:
     text = f"{item.get('title', '')} {item.get('summary', '')[:500]}"
     return _similar(claim, text) >= 0.38
+
+
+def _relation(claim: str, item: dict) -> str | None:
+    """Classify how an item relates to a claim without pretending to prove truth."""
+    text = f"{item.get('title', '')} {item.get('summary', '')[:500]}"
+    fc, fi = features(claim), features(text)
+    related = _similar(claim, text) >= 0.26 or bool(fc.entities & fi.entities)
+    if not related:
+        return None
+    for positive, negative in OPPOSITES:
+        if (_has_any(claim, positive) and _has_any(text, negative)) or \
+                (_has_any(claim, negative) and _has_any(text, positive)):
+            return "refute"
+    if fc.numbers and fi.numbers and not (fc.numbers & fi.numbers) \
+            and _similar(claim, text) >= 0.30:
+        return "refute"
+    if _has_any(text, UNCERTAINTY) != _has_any(claim, UNCERTAINTY):
+        return "unknown"
+    if _support(claim, item):
+        return "support"
+    return "unknown"
+
+
+def _best_quote(claim: str, item: dict) -> dict:
+    """Return an exact, auditable quote and character offsets from title/summary."""
+    candidates = []
+    for field in ("title", "summary"):
+        value = str(item.get(field) or "")
+        if not value:
+            continue
+        spans = [(0, len(value))] if field == "title" else [
+            (m.start(), m.end()) for m in re.finditer(r"[^。！？!?\n]+[。！？!?]?", value)
+            if m.group().strip()]
+        for start, end in spans:
+            quote = value[start:end].strip()
+            if quote:
+                left = value.find(quote, start, end)
+                candidates.append((_similar(claim, quote), field, left, left + len(quote), quote))
+    score, field, start, end, quote = max(candidates, default=(0.0, "title", 0, 0, ""))
+    return {"quote": quote, "quote_field": field, "quote_start": start,
+            "quote_end": end, "quote_hash": hashlib.sha256(quote.encode()).hexdigest()[:16],
+            "similarity": round(score, 4)}
 
 
 def claims(items: list[dict], llm: dict | None = None) -> list[dict]:
@@ -43,7 +87,9 @@ def claims(items: list[dict], llm: dict | None = None) -> list[dict]:
 
     out = []
     for text in candidates[:8]:
-        supporting = [x for x in items if _support(text, x)]
+        related = [(x, _relation(text, x)) for x in items]
+        related = [(x, relation) for x, relation in related if relation]
+        supporting = [x for x, relation in related if relation == "support"]
         if not supporting:
             continue
         groups = sorted({x.get("grp") or x.get("source_id") for x in supporting})
@@ -52,22 +98,35 @@ def claims(items: list[dict], llm: dict | None = None) -> list[dict]:
                                      if x.get("source_role", "reporting")
                                      in ("reporting", "wire")})
         roles = sorted({x.get("source_role", "reporting") for x in supporting})
-        if len(independent_groups) >= 2:
+        refuting = [x for x, relation in related if relation == "refute"]
+        if refuting:
+            status = "disputed"
+        elif len(independent_groups) >= 2:
             status = "independently_reported"
         elif roles == ["official"]:
             status = "official_statement"
         else:
             status = "single_report"
-        refs = [{"source_id": x.get("source_id"), "source": x.get("source_name"),
-                 "group": x.get("grp"), "url": x.get("url"),
-                 "published_ts": x.get("published_ts"),
-                 "source_role": x.get("source_role", "reporting")}
-                for x in supporting]
+        refs = [{"item_id": x.get("id"), "source_id": x.get("source_id"),
+                 "source": x.get("source_name"), "group": x.get("grp"),
+                 "url": x.get("url"), "published_ts": x.get("published_ts"),
+                 "source_role": x.get("source_role", "reporting"),
+                 "relation": relation, "relation_method": "heuristic-relation-v1",
+                 **_best_quote(text, x)}
+                for x, relation in related]
+        relation_counts = {kind: sum(ref["relation"] == kind for ref in refs)
+                           for kind in ("support", "refute", "unknown")}
         out.append({
             "id": hashlib.sha1(text.encode("utf-8")).hexdigest()[:12],
             "text": text, "status": status,
             "independent_groups": len(independent_groups),
             "groups": groups, "source_roles": roles, "evidence": refs,
+            "relation_counts": relation_counts,
+            "unresolved": (["存在方向或关键数字相反的来源，需核对原始材料。"]
+                           if refuting else
+                           ["尚缺少独立采编来源的交叉验证。"]
+                           if len(independent_groups) < 2 else []),
+            "method": "extractive-v1",
         })
     return out
 

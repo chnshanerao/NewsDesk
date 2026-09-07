@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from newsdesk import benchmark, config, digest, evaluation, fetch, pipeline, quality, server, store, verify_llm  # noqa: E402
+from newsdesk import benchmark, claim_evaluation, config, digest, evaluation, fetch, pipeline, quality, server, store, verify_llm  # noqa: E402
 from newsdesk.normalize import fmt_ts  # noqa: E402
 
 
@@ -248,6 +248,23 @@ def cmd_benchmark(args):
         conn.close()
 
 
+def cmd_export_claim_eval(args):
+    reg, profile, conn = _ctx(args)
+    try:
+        result = claim_evaluation.export_pairs(
+            conn, Path(args.out), limit=args.limit, seed=args.seed)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    finally:
+        conn.close()
+
+
+def cmd_validate_claim_eval(args):
+    result = claim_evaluation.validate_dataset(Path(args.dataset))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if args.strict and not result.get("valid"):
+        raise SystemExit(1)
+
+
 def main():
     ap = argparse.ArgumentParser(prog="newsdesk", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -320,6 +337,17 @@ def main():
     p.add_argument("--iterations", type=int, default=30)
     p.add_argument("--strict", action="store_true", help="p95 超过 250ms 时返回非零")
     p.set_defaults(func=cmd_benchmark)
+
+    p = sub.add_parser("export-claim-eval", help="导出 claim 关系双盲人工标注集")
+    p.add_argument("--out", default=str(config.DATA_DIR / "claim-eval"))
+    p.add_argument("--limit", type=int, default=300)
+    p.add_argument("--seed", type=int, default=20260906)
+    p.set_defaults(func=cmd_export_claim_eval)
+
+    p = sub.add_parser("validate-claim-eval", help="验证双人标注与第三人仲裁数据")
+    p.add_argument("--dataset", default=str(config.DATA_DIR / "claim-eval"))
+    p.add_argument("--strict", action="store_true")
+    p.set_defaults(func=cmd_validate_claim_eval)
 
     args = ap.parse_args()
     args.func(args)

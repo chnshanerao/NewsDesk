@@ -21,3 +21,6 @@ data/recovery-status.json
 .DS_Store
 .idea/
 .vscode/
+
+# 用于把本地历史交给有 GitHub 推送权限的机器（沙箱内 push 被 403 拒绝）
+.git-bundles/

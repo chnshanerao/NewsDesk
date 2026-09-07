@@ -2,8 +2,11 @@
 import json
 import time
 
+from concurrent.futures import ThreadPoolExecutor
+
 from . import cluster as clustering
-from . import alerting, config, credibility, entities, fetch, store, verify_llm
+from . import (alerting, article, config, credibility, entities, evidence, fetch,
+               store, verify_llm)
 from .normalize import now_ts
 
 
@@ -78,6 +81,7 @@ def rescore(conn, reg: dict, profile: dict, window_h: int | None = None,
     for it in items:
         it["src_topics"] = src_topics.get(it["source_id"], [])
         it["src_role"] = src_roles.get(it["source_id"], "reporting")
+        it["source_role"] = it["src_role"]
 
     log(f"  窗口内稿件 {len(items)} 条（近 {window_h}h）")
     groups = clustering.build(items)
@@ -95,6 +99,7 @@ def rescore(conn, reg: dict, profile: dict, window_h: int | None = None,
             [c["headline"], *[m["title"] + " " + (m.get("summary") or "")
                               for m in members]])
         entities.link_cluster(conn, cid, entity_text)
+        store.replace_cluster_claims(conn, cid, evidence.claims(members, c.get("llm")))
         active_ids.append(cid)
         assignments.extend((it["id"], cid) for it in members)
         n_scored += 1
@@ -110,13 +115,43 @@ def rescore(conn, reg: dict, profile: dict, window_h: int | None = None,
     conn.execute("DELETE FROM clusters WHERE last_ts>=? AND "
                  "id NOT IN (SELECT id FROM active_cluster_ids)", (since,))
     conn.execute("DELETE FROM cluster_entities WHERE cluster_id NOT IN (SELECT id FROM clusters)")
+    conn.execute("DELETE FROM claims WHERE cluster_id NOT IN (SELECT id FROM clusters)")
+    conn.execute("DELETE FROM claim_evidence WHERE claim_id NOT IN (SELECT id FROM claims) "
+                 "OR item_id NOT IN (SELECT id FROM items)")
     conn.execute("UPDATE items SET cluster_id=NULL WHERE cluster_id IS NOT NULL AND "
                  "NOT EXISTS (SELECT 1 FROM clusters c WHERE c.id=items.cluster_id)")
     conn.commit()
     return {"n_items": len(items), "n_clusters": n_scored}
 
 
-def llm_pass(conn, profile: dict, top_n: int | None = None, log=print) -> dict:
+def hydrate_bodies(conn, reg: dict, limit: int | None = None, log=print) -> dict:
+    """给排名靠前事件的头条稿抓正文前几段，供详情页『主要内容』面板。
+
+    必须在 rescore 之后跑：要靠 cluster.rank 决定优先级。抓不到不算失败——
+    详情页会退回 feed 摘要，正文只是让用户在点原文链接前多一层判断依据。
+    """
+    limit = config.BODY_MAX_PER_RUN if limit is None else limit
+    if limit <= 0:
+        return {"n": 0, "ok": 0}
+    skip = {s["id"] for s in reg["sources"] if s.get("body_extract") is False}
+    rows = store.items_needing_body(conn, limit, skip_sources=skip)
+    if not rows:
+        return {"n": 0, "ok": 0}
+
+    def work(row):
+        state, text = article.fetch_preview(row["url"])
+        return row["id"], state, text
+
+    with ThreadPoolExecutor(max_workers=config.FETCH_WORKERS) as pool:
+        results = list(pool.map(work, rows))
+    store.save_item_bodies(conn, results)
+    ok = sum(1 for _, state, _ in results if state == "ok")
+    log(f"  正文预览 {ok}/{len(results)} 篇抽取成功")
+    return {"n": len(results), "ok": ok}
+
+
+def llm_pass(conn, profile: dict, top_n: int | None = None, log=print,
+             source_roles: dict | None = None) -> dict:
     """对排名最高的事件跑 LLM 甄别。已有结果的跳过，省钱。"""
     top_n = top_n or config.LLM_MAX_CLUSTERS
     now = now_ts()
@@ -135,11 +170,15 @@ def llm_pass(conn, profile: dict, top_n: int | None = None, log=print) -> dict:
         return {"n": 0, "ok": 0, "err": 0}
 
     pairs = []
+    items_by_cluster = {}
     for r in rows:
         c = dict(r)
         c["topics"] = json.loads(r["topics"] or "[]")
         items = [dict(x) for x in store.cluster_items(conn, r["id"])]
+        for item in items:
+            item["source_role"] = (source_roles or {}).get(item["source_id"], "reporting")
         pairs.append((c, items))
+        items_by_cluster[c["id"]] = items
 
     ok = err = 0
     for c, res, e in verify_llm.judge_many(pairs):
@@ -150,6 +189,8 @@ def llm_pass(conn, profile: dict, top_n: int | None = None, log=print) -> dict:
         cred, code, label, rank, rel = credibility.blend_llm(
             c["cred"], c["relevance"], res, c["last_ts"], now)
         store.save_llm(conn, c["id"], res, cred, code, label, rank)
+        store.replace_cluster_claims(
+            conn, c["id"], evidence.claims(items_by_cluster[c["id"]], res))
         conn.execute("UPDATE clusters SET relevance=? WHERE id=?", (rel, c["id"]))
         conn.commit()
         ok += 1
@@ -170,10 +211,14 @@ def run(conn, reg: dict, profile: dict, *, use_llm=False, only=None,
         log(f"  合计 {ing['n_fetched']} 条，新增 {ing['n_new']} 条")
         log("▸ 聚类与评分")
         sc = rescore(conn, reg, profile, window_h=window_h, log=log)
+        log("▸ 正文预览")
+        body = hydrate_bodies(conn, reg, log=log)
         llm = {"n": 0, "ok": 0, "err": 0}
         if use_llm:
             log("▸ LLM 内容甄别")
-            llm = llm_pass(conn, profile, log=log)
+            source_roles = {s["id"]: s.get("source_role", config.source_role(s))
+                            for s in reg["sources"]}
+            llm = llm_pass(conn, profile, log=log, source_roles=source_roles)
         alert_results = alerting.evaluate(conn, notify=True)
         alert_new = sum(x["new_count"] for x in alert_results)
         if alert_new:
@@ -181,7 +226,7 @@ def run(conn, reg: dict, profile: dict, *, use_llm=False, only=None,
         store.end_run(conn, run_id, n_fetched=ing["n_fetched"], n_new=ing["n_new"],
                       n_clusters=sc["n_clusters"], llm_used=use_llm,
                       note=f"llm_ok={llm['ok']} llm_err={llm['err']} alerts={alert_new}")
-        return {**ing, **sc, "llm": llm, "alert_new": alert_new,
+        return {**ing, **sc, "llm": llm, "body": body, "alert_new": alert_new,
                 "elapsed": round(time.time() - t0, 1)}
     except Exception as exc:
         store.fail_run(conn, run_id, f"{type(exc).__name__}: {exc}")

@@ -1,4 +1,5 @@
 """SQLite 存储层。单文件库，WAL 模式，可被 server 与 CLI 并发读。"""
+import hashlib
 import json
 import os
 import re
@@ -24,7 +25,10 @@ CREATE TABLE IF NOT EXISTS items (
     fetched_ts    INTEGER,
     simhash       INTEGER,
     grams         TEXT,
-    cluster_id    TEXT
+    cluster_id    TEXT,
+    body          TEXT,
+    body_state    TEXT,
+    body_ts       INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_items_pub     ON items(published_ts DESC);
 CREATE INDEX IF NOT EXISTS idx_items_cluster ON items(cluster_id);
@@ -160,6 +164,27 @@ CREATE TABLE IF NOT EXISTS cluster_entities (
     FOREIGN KEY(entity_id) REFERENCES entities(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_cluster_entities_entity ON cluster_entities(entity_id,cluster_id);
+CREATE TABLE IF NOT EXISTS claims (
+    id TEXT PRIMARY KEY, cluster_id TEXT NOT NULL, text TEXT NOT NULL,
+    status TEXT NOT NULL, independent_groups INTEGER NOT NULL DEFAULT 0,
+    groups_json TEXT NOT NULL DEFAULT '[]', source_roles_json TEXT NOT NULL DEFAULT '[]',
+    method TEXT NOT NULL, updated_ts INTEGER NOT NULL,
+    FOREIGN KEY(cluster_id) REFERENCES clusters(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_claims_cluster ON claims(cluster_id,status);
+CREATE TABLE IF NOT EXISTS claim_evidence (
+    claim_id TEXT NOT NULL, item_id TEXT NOT NULL, source_id TEXT,
+    source_name TEXT, source_group TEXT, source_role TEXT, url TEXT,
+    published_ts INTEGER, quote TEXT NOT NULL, quote_field TEXT NOT NULL,
+    quote_start INTEGER NOT NULL, quote_end INTEGER NOT NULL, quote_hash TEXT NOT NULL,
+    similarity REAL NOT NULL, relation TEXT NOT NULL DEFAULT 'unknown',
+    relation_confidence REAL NOT NULL DEFAULT 0,
+    relation_method TEXT NOT NULL DEFAULT 'legacy-unclassified',
+    PRIMARY KEY(claim_id,item_id,quote_hash),
+    FOREIGN KEY(claim_id) REFERENCES claims(id) ON DELETE CASCADE,
+    FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_claim_evidence_claim ON claim_evidence(claim_id,similarity DESC);
 CREATE TABLE IF NOT EXISTS source_probes (
     id INTEGER PRIMARY KEY AUTOINCREMENT, source_id TEXT NOT NULL, ts INTEGER NOT NULL,
     verdict TEXT NOT NULL, ms INTEGER NOT NULL, n_items INTEGER NOT NULL,
@@ -168,7 +193,7 @@ CREATE TABLE IF NOT EXISTS source_probes (
 CREATE INDEX IF NOT EXISTS idx_source_probes_ts ON source_probes(ts DESC,source_id);
 """
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 11
 
 
 def _ensure_column(conn, table, name, declaration):
@@ -224,6 +249,30 @@ def _source_probe_history(conn):
     conn.executescript(SCHEMA)
 
 
+def _claim_evidence(conn):
+    conn.executescript(SCHEMA)
+
+
+def _claim_relations(conn):
+    _ensure_column(conn, "claim_evidence", "relation", "TEXT NOT NULL DEFAULT 'unknown'")
+    conn.execute("DELETE FROM claim_evidence WHERE claim_id NOT IN (SELECT id FROM claims) "
+                 "OR item_id NOT IN (SELECT id FROM items)")
+
+
+def _claim_relation_provenance(conn):
+    _ensure_column(conn, "claim_evidence", "relation_confidence", "REAL NOT NULL DEFAULT 0")
+    _ensure_column(conn, "claim_evidence", "relation_method",
+                   "TEXT NOT NULL DEFAULT 'legacy-unclassified'")
+
+
+def _item_body_preview(conn):
+    # body_state 记住上一次抽取结论（ok/empty/error/skip），避免对同一个抽不出
+    # 正文的页面每轮重试。
+    _ensure_column(conn, "items", "body", "TEXT")
+    _ensure_column(conn, "items", "body_state", "TEXT")
+    _ensure_column(conn, "items", "body_ts", "INTEGER")
+
+
 MIGRATIONS = (
     (1, "baseline", _baseline),
     (2, "evidence_and_source_health", _evidence_health),
@@ -232,6 +281,10 @@ MIGRATIONS = (
     (5, "entity_master_and_fulltext_search", _entity_search),
     (6, "pipeline_run_outcomes", _run_outcomes),
     (7, "source_probe_history", _source_probe_history),
+    (8, "claim_level_evidence", _claim_evidence),
+    (9, "claim_evidence_relations", _claim_relations),
+    (10, "claim_relation_provenance", _claim_relation_provenance),
+    (11, "item_body_preview", _item_body_preview),
 )
 
 
@@ -245,6 +298,7 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
@@ -326,6 +380,58 @@ def cluster_items(conn, cluster_id: str) -> list[sqlite3.Row]:
         "COALESCE(published_ts, fetched_ts) ASC",
         (cluster_id,),
     ).fetchall()
+
+
+def items_needing_body(conn, limit: int, skip_sources: set[str] | None = None
+                       ) -> list[sqlite3.Row]:
+    """只给排名靠前事件的头条稿抓正文预览。
+
+    没必要给全库抓：详情页只展示领头稿的『主要内容』，而每次抓正文都是一次
+    外网请求。`body_state IS NULL` 保证每篇最多尝试一次——抽不出来的页面记下
+    `empty`/`error` 就不再回头。
+
+    领头稿的选取必须和详情页一致（`source_name = clusters.headline_src`，再按
+    tier、时间排序）。曾经按 `items.url = clusters.url` 选，实测 79 篇抽取成功
+    只覆盖 50 个事件——剩下 29 篇抓的正是没人展示的稿件，白烧配额。
+
+    排序把摘要过短的稿件排在前面：那些页面的『主要内容』面板没有摘要可退，
+    抽不到正文就是开天窗。联合早报等 HTML 类源 summary 恒为空，纯按 rank
+    排会被中文网媒挤出每轮 80 篇的配额——实测 40 条里只有 1 条被抽到。
+    """
+    rows = conn.execute(
+        """SELECT i.* FROM items i JOIN clusters c ON c.id = i.cluster_id
+           WHERE c.last_ts >= ? AND i.body_state IS NULL AND i.url LIKE 'http%'
+             AND i.id = COALESCE(
+               (SELECT j.id FROM items j WHERE j.cluster_id = c.id
+                  AND j.source_name = c.headline_src
+                ORDER BY j.tier ASC, COALESCE(j.published_ts, j.fetched_ts) ASC LIMIT 1),
+               (SELECT j.id FROM items j WHERE j.cluster_id = c.id
+                ORDER BY j.tier ASC, COALESCE(j.published_ts, j.fetched_ts) ASC LIMIT 1))
+           ORDER BY CASE WHEN LENGTH(COALESCE(i.summary, '')) < ? THEN 0 ELSE 1 END,
+                    c.rank DESC LIMIT ?""",
+        (int(time.time()) - config.CLUSTER_WINDOW_H * 3600,
+         config.BODY_THIN_SUMMARY_CHARS, max(limit, 0) * 3),
+    ).fetchall()
+    skip = skip_sources or set()
+    return [r for r in rows if r["source_id"] not in skip][:limit]
+
+
+def save_item_bodies(conn, results: list[tuple[str, str, str]]) -> None:
+    """results 为 (item_id, state, text)。state 一律写入，空正文也要记账。"""
+    now = int(time.time())
+    conn.executemany(
+        "UPDATE items SET body=?, body_state=?, body_ts=? WHERE id=?",
+        [(text or None, state, now, iid) for iid, state, text in results])
+    conn.commit()
+
+
+def body_preview_stats(conn, since_ts: int) -> dict:
+    row = conn.execute(
+        "SELECT COUNT(*) AS attempted, "
+        "SUM(CASE WHEN body_state='ok' THEN 1 ELSE 0 END) AS ok "
+        "FROM items WHERE body_ts IS NOT NULL AND body_ts >= ?",
+        (since_ts,)).fetchone()
+    return {"attempted": row["attempted"] or 0, "ok": row["ok"] or 0}
 
 
 # ---------------- clusters ----------------
@@ -416,6 +522,62 @@ def feed(conn, *, limit=80, min_cred=0.0, topic=None, q=None, source=None, asset
 
 def get_cluster(conn, cluster_id: str):
     return conn.execute("SELECT * FROM clusters WHERE id=?", (cluster_id,)).fetchone()
+
+
+def replace_cluster_claims(conn, cluster_id: str, claims: list[dict]) -> None:
+    conn.execute("DELETE FROM claim_evidence WHERE claim_id IN "
+                 "(SELECT id FROM claims WHERE cluster_id=?)", (cluster_id,))
+    conn.execute("DELETE FROM claims WHERE cluster_id=?", (cluster_id,))
+    now = int(time.time())
+    for claim in claims:
+        claim_id = hashlib.sha1(
+            f"{cluster_id}\0{claim['id']}".encode("utf-8")).hexdigest()[:20]
+        conn.execute(
+            "INSERT INTO claims(id,cluster_id,text,status,independent_groups,groups_json,"
+            "source_roles_json,method,updated_ts) VALUES(?,?,?,?,?,?,?,?,?)",
+            (claim_id, cluster_id, claim["text"], claim["status"],
+             claim["independent_groups"], json.dumps(claim.get("groups", [])),
+             json.dumps(claim.get("source_roles", [])), claim.get("method", "extractive-v1"), now))
+        conn.executemany(
+            "INSERT OR REPLACE INTO claim_evidence(claim_id,item_id,source_id,source_name,source_group,"
+            "source_role,url,published_ts,quote,quote_field,quote_start,quote_end,quote_hash,"
+            "similarity,relation,relation_confidence,relation_method) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [(claim_id, ref["item_id"], ref.get("source_id"), ref.get("source"),
+              ref.get("group"), ref.get("source_role"), ref.get("url"),
+              ref.get("published_ts"), ref["quote"], ref["quote_field"],
+              ref["quote_start"], ref["quote_end"], ref["quote_hash"],
+              ref.get("similarity", 0.0), ref.get("relation", "support"),
+              ref.get("relation_confidence", ref.get("similarity", 0.0)),
+              ref.get("relation_method", "heuristic-relation-v1"))
+             for ref in claim.get("evidence", [])])
+
+
+def cluster_claims(conn, cluster_id: str) -> list[dict]:
+    out = []
+    for row in conn.execute(
+            "SELECT * FROM claims WHERE cluster_id=? ORDER BY independent_groups DESC,id",
+            (cluster_id,)):
+        claim = dict(row)
+        claim["groups"] = json.loads(claim.pop("groups_json") or "[]")
+        claim["source_roles"] = json.loads(claim.pop("source_roles_json") or "[]")
+        claim["evidence"] = [dict(x) for x in conn.execute(
+            "SELECT item_id,source_id,source_name AS source,source_group AS 'group',"
+            "source_role,url,published_ts,quote,quote_field,quote_start,quote_end,quote_hash,"
+            "similarity,relation,relation_confidence,relation_method "
+            "FROM claim_evidence WHERE claim_id=? "
+            "ORDER BY CASE relation WHEN 'refute' THEN 0 WHEN 'support' THEN 1 ELSE 2 END,"
+            "similarity DESC,"
+            "published_ts ASC", (row["id"],))]
+        claim["relation_counts"] = {
+            kind: sum(x["relation"] == kind for x in claim["evidence"])
+            for kind in ("support", "refute", "unknown")}
+        claim["unresolved"] = (["存在方向或关键数字相反的来源，需核对原始材料。"]
+                               if claim["relation_counts"]["refute"] else
+                               ["尚缺少独立采编来源的交叉验证。"]
+                               if claim["independent_groups"] < 2 else [])
+        out.append(claim)
+    return out
 
 
 # ---------------- health / runs ----------------

@@ -9,7 +9,7 @@
 <body>
 
 <div class="topbar">
-  <div class="brand"><b>NEWSDESK</b><span>信源甄别终端</span></div>
+  <button class="brand" id="btn-about" title="为什么有 NEWSDESK"><b>NEWSDESK</b><span>信源甄别终端</span></button>
   <div class="tabs">
     <button class="tab on" data-view="signal">值得看<kbd>1</kbd></button>
     <button class="tab" data-view="unverified">待证<kbd>2</kbd></button>
@@ -23,12 +23,12 @@
   <div class="spacer"></div>
   <button class="btn" id="btn-sources">信源 <kbd>s</kbd></button>
   <button class="btn ai-radar-btn" id="btn-ai-radar">AI 雷达 <kbd>i</kbd></button>
+  <button class="btn research-btn" id="btn-research">研究 <kbd>e</kbd></button>
   <button class="btn" id="btn-quality">质量 <kbd>q</kbd></button>
-  <a class="btn" href="/report.html" target="_blank" rel="noopener">对比报告</a>
   <button class="btn" id="btn-digest">简报 <kbd>d</kbd></button>
   <button class="btn" id="btn-alerts">监控 <span class="alert-badge" id="alert-badge" hidden>0</span> <kbd>a</kbd></button>
   <button class="btn" id="btn-watchlist">观察列表 <kbd>w</kbd></button>
-  <button class="btn" id="btn-help">?</button>
+  <button class="btn" id="btn-help" title="三步上手与快捷键">上手 <kbd>?</kbd></button>
   <button class="btn command-trigger" id="btn-command">命令 <kbd>Ctrl K</kbd></button>
   <button class="btn" id="btn-refresh">刷新 <kbd>r</kbd></button>
   <div class="clock" id="clock">--:--:--</div>

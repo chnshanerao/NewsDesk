@@ -5,8 +5,9 @@ everything into a marketing score.  A failed gate remains visible to operators.
 """
 import time
 import json
+import hashlib
 
-from . import evaluation, store
+from . import claim_evaluation, evaluation, store
 
 
 def _gate(name, value, target, passed, detail="", severity="required"):
@@ -54,6 +55,13 @@ def scorecard(conn, registry: dict, now: int | None = None) -> dict:
                   if any(t.startswith("ai_") for t in s.get("topics", []))]
     ai_primary_sources = [s for s in ai_sources
                           if s.get("source_role") == "official"]
+    ai_primary_owners = {s.get("owner") or s.get("group") or s["id"]
+                         for s in ai_primary_sources}
+    active_ai_primary = [s for s in ai_primary_sources if s["id"] in health and
+                         health[s["id"]].get("verdict") == "healthy" and
+                         int(health[s["id"]].get("newest_ts") or 0) >= now - 30 * 86400]
+    ai_reporting_sources = [s for s in ai_sources
+                            if s.get("source_role") in ("reporting", "wire")]
     ai_since = now - 72 * 3600
     ai_clusters = []
     for row in conn.execute("SELECT n_groups,topics FROM clusters WHERE last_ts>=?", (ai_since,)):
@@ -77,6 +85,57 @@ def scorecard(conn, registry: dict, now: int | None = None) -> dict:
     entity_kind_counts = {row["kind"]: row["n"] for row in conn.execute(
         "SELECT kind,COUNT(*) n FROM entities GROUP BY kind")}
     entity_links = conn.execute("SELECT COUNT(*) FROM cluster_entities").fetchone()[0]
+    claim_count = conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0]
+    cited_claims = conn.execute(
+        "SELECT COUNT(*) FROM claims c WHERE EXISTS "
+        "(SELECT 1 FROM claim_evidence ce WHERE ce.claim_id=c.id)").fetchone()[0]
+    related_evidence = conn.execute(
+        "SELECT COUNT(*) FROM claim_evidence WHERE relation IN ('support','refute','unknown') "
+        "AND relation_method!='legacy-unclassified'"
+    ).fetchone()[0]
+    evidence_count = conn.execute("SELECT COUNT(*) FROM claim_evidence").fetchone()[0]
+    disputed_claims = conn.execute(
+        "SELECT COUNT(*) FROM claims WHERE status='disputed'").fetchone()[0]
+    claims_without_support = conn.execute(
+        "SELECT COUNT(*) FROM claims c WHERE NOT EXISTS (SELECT 1 FROM claim_evidence ce "
+        "WHERE ce.claim_id=c.id AND ce.relation='support')").fetchone()[0]
+    priority_relation_total = conn.execute(
+        "SELECT COUNT(*) FROM claim_evidence ce JOIN claims cl ON cl.id=ce.claim_id "
+        "JOIN clusters c ON c.id=cl.cluster_id WHERE c.cred>=60 AND c.last_ts>=?",
+        (now - 72 * 3600,)).fetchone()[0]
+    priority_relation_classified = conn.execute(
+        "SELECT COUNT(*) FROM claim_evidence ce JOIN claims cl ON cl.id=ce.claim_id "
+        "JOIN clusters c ON c.id=cl.cluster_id WHERE c.cred>=60 AND c.last_ts>=? "
+        "AND ce.relation_method!='legacy-unclassified'", (now - 72 * 3600,)).fetchone()[0]
+    # 详情页『主要内容』的原料：只统计近 72h 尝试过抽取的稿件，抽不到的会退回
+    # feed 摘要，所以这是 advisory —— 覆盖率下滑说明多家站点改版了，不是故障。
+    body_attempted = conn.execute(
+        "SELECT COUNT(*) FROM items WHERE body_ts>=?", (now - 72 * 3600,)).fetchone()[0]
+    body_ok = conn.execute(
+        "SELECT COUNT(*) FROM items WHERE body_ts>=? AND body_state='ok'",
+        (now - 72 * 3600,)).fetchone()[0]
+    orphan_claim_evidence = conn.execute(
+        "SELECT COUNT(*) FROM claim_evidence ce WHERE NOT EXISTS "
+        "(SELECT 1 FROM claims c WHERE c.id=ce.claim_id) OR NOT EXISTS "
+        "(SELECT 1 FROM items i WHERE i.id=ce.item_id)").fetchone()[0]
+    quote_rows = list(conn.execute(
+        "SELECT ce.quote,ce.quote_field,ce.quote_start,ce.quote_end,ce.quote_hash,"
+        "i.title,i.summary FROM claim_evidence ce JOIN items i ON i.id=ce.item_id"))
+    exact_quotes = 0
+    for row in quote_rows:
+        source_text = str(row[row["quote_field"]] or "") \
+            if row["quote_field"] in ("title", "summary") else ""
+        quote = str(row["quote"] or "")
+        if (source_text[row["quote_start"]:row["quote_end"]] == quote and
+                hashlib.sha256(quote.encode()).hexdigest()[:16] == row["quote_hash"]):
+            exact_quotes += 1
+    priority_clusters = conn.execute(
+        "SELECT COUNT(*) FROM clusters WHERE cred>=60 AND last_ts>=?", (now - 72 * 3600,)
+    ).fetchone()[0]
+    priority_with_claims = conn.execute(
+        "SELECT COUNT(*) FROM clusters c WHERE c.cred>=60 AND c.last_ts>=? AND EXISTS "
+        "(SELECT 1 FROM claims cl WHERE cl.cluster_id=c.id)", (now - 72 * 3600,)
+    ).fetchone()[0]
     fts_count = conn.execute("SELECT COUNT(*) FROM items_fts").fetchone()[0]
     item_count = conn.execute("SELECT COUNT(*) FROM items").fetchone()[0]
     last_run = store.last_run(conn)
@@ -95,15 +154,30 @@ def scorecard(conn, registry: dict, now: int | None = None) -> dict:
     gold_items, gold_pairs = evaluation.load_gold(
         store.config.DATA_DIR / "crosslingual_gold.json")
     clustering = evaluation.evaluate(gold_items, gold_pairs)
+    try:
+        human_gold = claim_evaluation.validate_dataset(store.config.DATA_DIR / "claim-eval")
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        human_gold = {"valid": False, "human_adjudicated": False, "detail": str(exc)}
 
     gates = [
         _gate("enabled_sources", len(enabled), ">=20", len(enabled) >= 20),
         _gate("source_owners", len(owners), ">=15", len(owners) >= 15),
         _gate("source_languages", len(languages), ">=3", len(languages) >= 3),
         _gate("source_regions", len(regions), ">=4", len(regions) >= 4),
-        _gate("ai_specialist_sources", len(ai_sources), ">=10", len(ai_sources) >= 10),
-        _gate("ai_primary_sources", len(ai_primary_sources), ">=6",
-              len(ai_primary_sources) >= 6),
+        _gate("ai_specialist_sources", len(ai_sources), ">=20", len(ai_sources) >= 20),
+        _gate("ai_primary_sources", len(ai_primary_sources), ">=10",
+              len(ai_primary_sources) >= 10),
+        _gate("ai_primary_sources_target", len(ai_primary_sources), ">=20",
+              len(ai_primary_sources) >= 20, "advisory first-party depth target",
+              severity="advisory"),
+        _gate("active_ai_primary_sources_30d", len(active_ai_primary), ">=15",
+              len(active_ai_primary) >= 15,
+              "must be healthy and publish within the last 30 days"),
+        _gate("ai_primary_owners", len(ai_primary_owners), ">=15",
+              len(ai_primary_owners) >= 15,
+              "duplicate channels from one owner count once"),
+        _gate("ai_reporting_sources", len(ai_reporting_sources), ">=15",
+              len(ai_reporting_sources) >= 15),
         _gate("healthy_source_rate", round(healthy_rate, 4), ">=0.80",
               healthy_rate >= .8, f"{len(healthy)}/{len(enabled)} enabled sources healthy"),
         _gate("source_probe_success_24h", round(probe_success, 4), ">=0.80",
@@ -149,6 +223,41 @@ def scorecard(conn, registry: dict, now: int | None = None) -> dict:
         _gate("open_source_entities", entity_kind_counts.get("open_source", 0), ">=5",
               entity_kind_counts.get("open_source", 0) >= 5),
         _gate("persisted_entity_links", entity_links, ">=1", entity_links >= 1),
+        _gate("persisted_claims", claim_count, ">=1", claim_count >= 1),
+        _gate("claim_citation_coverage", round(cited_claims / claim_count, 4)
+              if claim_count else 0, ">=0.95",
+              bool(claim_count) and cited_claims / claim_count >= .95,
+              f"{cited_claims}/{claim_count} claims have exact source quotes"),
+        _gate("claim_relation_coverage", round(related_evidence / evidence_count, 4)
+              if evidence_count else 0, ">=0.80",
+              bool(evidence_count) and related_evidence / evidence_count >= .80,
+              f"{related_evidence}/{evidence_count} citations classified; legacy unknown excluded",
+              severity="advisory"),
+        _gate("priority_claim_relation_coverage", round(
+            priority_relation_classified / priority_relation_total, 4)
+              if priority_relation_total else 0, ">=0.95",
+              bool(priority_relation_total) and
+              priority_relation_classified / priority_relation_total >= .95,
+              f"{priority_relation_classified}/{priority_relation_total} priority citations classified"),
+        _gate("claims_with_supporting_quote", claim_count - claims_without_support,
+              f"={claim_count}", claims_without_support == 0,
+              "each claim must retain at least one supporting source quote"),
+        _gate("claim_evidence_integrity", exact_quotes, f"={len(quote_rows)}",
+              bool(quote_rows) and exact_quotes == len(quote_rows),
+              "quote offsets and hashes must match the current stored item"),
+        _gate("orphan_claim_evidence", orphan_claim_evidence, "=0",
+              orphan_claim_evidence == 0),
+        _gate("body_preview_coverage_72h",
+              round(body_ok / body_attempted, 4) if body_attempted else 0, ">=0.70",
+              bool(body_attempted) and body_ok / body_attempted >= .70,
+              f"{body_ok}/{body_attempted} lead articles yielded a body preview; "
+              "misses fall back to the feed summary",
+              severity="advisory"),
+        _gate("priority_cluster_claim_coverage", round(
+            priority_with_claims / priority_clusters, 4) if priority_clusters else 0,
+              ">=0.95", bool(priority_clusters) and
+              priority_with_claims / priority_clusters >= .95,
+              f"{priority_with_claims}/{priority_clusters} high-priority 72h clusters"),
         _gate("fulltext_index_coverage", fts_count, f"={item_count}", fts_count == item_count),
         _gate("schema_version", schema["current"], f"={schema['expected']}",
               schema["current"] == schema["expected"]),
@@ -173,8 +282,9 @@ def scorecard(conn, registry: dict, now: int | None = None) -> dict:
               clustering["pair_recall"] >= .80),
         _gate("clustering_bcubed_f1", clustering["bcubed_f1"], ">=0.88",
               clustering["bcubed_f1"] >= .88),
-        _gate("human_adjudicated_gold", False, "true", False,
-              "requires independent human annotation and adjudication",
+        _gate("human_adjudicated_gold", bool(human_gold.get("human_adjudicated")),
+              "true", bool(human_gold.get("valid") and human_gold.get("human_adjudicated")),
+              human_gold.get("detail", "validated independent annotation and adjudication"),
               severity="advisory"),
     ]
     counts = {s: sum(g["status"] == s for g in gates) for s in ("pass", "warn", "fail")}
@@ -191,13 +301,31 @@ def scorecard(conn, registry: dict, now: int | None = None) -> dict:
         "entity_master": {"entities": entity_count, "companies": company_count,
                           "persisted_links": entity_links,
                           "fulltext_rows": fts_count},
+        "claim_evidence": {
+            "claims": claim_count, "cited_claims": cited_claims,
+            "citation_coverage": round(cited_claims / claim_count, 4) if claim_count else 0,
+            "priority_clusters": priority_clusters,
+            "priority_clusters_with_claims": priority_with_claims,
+            "relation_labeled_citations": related_evidence,
+            "legacy_unclassified_citations": evidence_count - related_evidence,
+            "priority_relation_coverage": round(
+                priority_relation_classified / priority_relation_total, 4)
+                if priority_relation_total else 0,
+            "disputed_claims": disputed_claims,
+            "exact_quotes": exact_quotes,
+            "orphan_evidence": orphan_claim_evidence,
+        },
         "ai_intelligence": {"sources": len(ai_sources),
                             "primary_sources": len(ai_primary_sources),
+                            "active_primary_sources_30d": len(active_ai_primary),
+                            "primary_owners": len(ai_primary_owners),
+                            "reporting_sources": len(ai_reporting_sources),
                             "events_72h": len(ai_clusters),
                             "independently_corroborated": ai_corroborated},
         "recovery": recovery,
         "clustering_benchmark": {**clustering, "dataset": "synthetic-reviewed-v1",
                                  "human_adjudicated": False},
+        "claim_relation_benchmark": human_gold,
         "boundaries": [
             "No licensed Bloomberg/Reuters/AP proprietary content",
             "Public delayed market context; not suitable for trade execution",
