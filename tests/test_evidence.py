@@ -17,6 +17,12 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(claims[0]["status"], "independently_reported")
         self.assertEqual(claims[0]["independent_groups"], 2)
         self.assertEqual(len(claims[0]["evidence"]), 2)
+        ref = claims[0]["evidence"][0]
+        self.assertEqual(ref["quote_field"], "title")
+        self.assertEqual(ref["quote"], rows[0]["title"])
+        self.assertEqual(rows[0]["title"][ref["quote_start"]:ref["quote_end"]], ref["quote"])
+        self.assertEqual(len(ref["quote_hash"]), 16)
+        self.assertEqual(ref["relation"], "support")
 
     def test_official_single_is_statement(self):
         row = item("a", "美联储发布利率决定", "fed", "official")
@@ -34,6 +40,17 @@ class EvidenceTests(unittest.TestCase):
                 item("b", "公司收入下降20%", "b")]
         result = evidence.contradictions(rows)
         self.assertEqual(result[0]["reason"], "方向性表述相反")
+
+    def test_claim_card_labels_support_refute_and_unknown(self):
+        rows = [item("a", "公司收入增长20%", "a"),
+                item("b", "公司收入下降20%", "b"),
+                item("c", "公司收入可能增长20%", "c")]
+        claim = evidence.claims(rows)[0]
+        self.assertEqual(claim["status"], "disputed")
+        self.assertGreaterEqual(claim["relation_counts"]["support"], 1)
+        self.assertGreaterEqual(claim["relation_counts"]["refute"], 1)
+        self.assertGreaterEqual(claim["relation_counts"]["unknown"], 1)
+        self.assertTrue(claim["unresolved"])
 
     def test_timeline_is_chronological(self):
         rows = [item("b", "后续", "b", ts=20), item("a", "首发", "a", ts=10)]

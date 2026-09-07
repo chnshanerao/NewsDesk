@@ -328,6 +328,16 @@ class ApiLanguageFilterTests(unittest.TestCase):
         self.assertIn("top_entities", payload)
         self.assertIn("sources", payload)
 
+    def test_research_endpoint_is_read_only_and_citation_shaped(self):
+        port = self.httpd.server_address[1]
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/research?q=event&limit=5",
+                timeout=3) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        self.assertEqual(payload["answer_mode"], "extractive_with_citations")
+        self.assertIn("findings", payload)
+        self.assertIn("citation_coverage", payload)
+
     def test_invalid_numeric_query_returns_400(self):
         port = self.httpd.server_address[1]
         for query in ("limit=nope", "limit=-1", "hours=0", "min_cred=nan"):

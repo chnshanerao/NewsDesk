@@ -183,6 +183,149 @@
       "note": "国际报道补充；与官方一次信源分开计组"
     },
     {
+      "id": "zaobao_realtime",
+      "name": "联合早报·即时",
+      "tier": 1,
+      "group": "sph_media",
+      "owner": "sph_media",
+      "country": "SG",
+      "region": "apac",
+      "source_type": "newsroom",
+      "source_role": "reporting",
+      "kind": "html",
+      "url": "https://www.zaobao.com.sg/realtime",
+      "html": {
+        "item_re": "<a[^>]+href=\"(?P<url>/news/(?:china|world|singapore|sea)/story\\d{8}-\\d+)\"[^>]+title=\"(?P<title>[^\"]{8,160})\"",
+        "base": "https://www.zaobao.com.sg",
+        "date_from_url_re": "story(\\d{8})-",
+        "limit": 40
+      },
+      "lang": "zh",
+      "topics": ["world", "macro", "policy", "society"],
+      "enabled": true,
+      "note": "新加坡独立采编媒体；HTML 列表源，提供全球与中国议题的区域视角"
+    },
+    {
+      "id": "yonhap_cn",
+      "name": "韩联社·中文",
+      "tier": 1,
+      "group": "yonhap",
+      "owner": "yonhap",
+      "country": "KR",
+      "region": "apac",
+      "source_type": "news_agency",
+      "source_role": "wire",
+      "kind": "rss",
+      "url": "https://cn.yna.co.kr/RSS/news.xml",
+      "lang": "zh",
+      "topics": ["world", "policy", "macro"],
+      "enabled": true,
+      "note": "韩国通讯社中文线，东北亚一手报道；与 yonhap_en 同一 owner，不重复计独立印证"
+    },
+    {
+      "id": "yonhap_en",
+      "name": "Yonhap News Agency",
+      "tier": 1,
+      "group": "yonhap",
+      "owner": "yonhap",
+      "country": "KR",
+      "region": "apac",
+      "source_type": "news_agency",
+      "source_role": "wire",
+      "kind": "rss",
+      "url": "https://en.yna.co.kr/RSS/news.xml",
+      "lang": "en",
+      "topics": ["world", "policy", "macro"],
+      "enabled": true,
+      "note": "韩联社英文线，补充非中文国际稿量"
+    },
+    {
+      "id": "kyodo_cn",
+      "name": "共同社·中文",
+      "tier": 1,
+      "group": "kyodo",
+      "owner": "kyodo",
+      "country": "JP",
+      "region": "apac",
+      "source_type": "news_agency",
+      "source_role": "wire",
+      "kind": "rss",
+      "url": "https://china.kyodonews.net/rss/news.xml",
+      "lang": "zh",
+      "topics": ["world", "policy", "macro"],
+      "enabled": true,
+      "note": "日本非营利合作制通讯社中文线，提供日本与东亚视角"
+    },
+    {
+      "id": "ansa_en",
+      "name": "ANSA · English",
+      "tier": 1,
+      "group": "ansa",
+      "owner": "ansa",
+      "country": "IT",
+      "region": "eu",
+      "source_type": "news_agency",
+      "source_role": "wire",
+      "kind": "rss",
+      "url": "https://www.ansa.it/english/english_rss.xml",
+      "lang": "en",
+      "topics": ["world", "policy", "macro"],
+      "enabled": true,
+      "note": "意大利出版商合作制通讯社英文线，补充南欧与地中海视角"
+    },
+    {
+      "id": "rappler_world",
+      "name": "Rappler",
+      "tier": 2,
+      "group": "rappler",
+      "owner": "rappler",
+      "country": "PH",
+      "region": "apac",
+      "source_type": "newsroom",
+      "source_role": "reporting",
+      "kind": "rss",
+      "url": "https://www.rappler.com/feed/",
+      "lang": "en",
+      "topics": ["world", "policy", "society"],
+      "enabled": true,
+      "note": "菲律宾独立调查报道媒体，补充东南亚一手采编"
+    },
+    {
+      "id": "vnexpress_en",
+      "name": "VnExpress · International",
+      "tier": 2,
+      "group": "vnexpress",
+      "owner": "vnexpress",
+      "country": "VN",
+      "region": "apac",
+      "source_type": "newsroom",
+      "source_role": "reporting",
+      "kind": "rss",
+      "url": "https://e.vnexpress.net/rss/news.rss",
+      "lang": "en",
+      "topics": ["world", "macro", "society"],
+      "enabled": true,
+      "note": "越南主要新闻网站英文版，补充东南亚制造与贸易线索"
+    },
+    {
+      "id": "wsj_world",
+      "name": "The Wall Street Journal · World",
+      "tier": 1,
+      "group": "dow_jones",
+      "owner": "dow_jones",
+      "country": "US",
+      "region": "us",
+      "source_type": "newsroom",
+      "source_role": "reporting",
+      "kind": "rss",
+      "url": "https://feeds.a.dj.com/rss/RSSWorldNews.xml",
+      "lang": "en",
+      "topics": ["world", "macro", "market", "policy"],
+      "enabled": false,
+      "body_extract": false,
+      "note": "实测 feed 冻结在 2025-01-27 已停更（lastBuildDate 同日），按『停更源不得冒充新鲜』规则禁用；正文另有付费墙，恢复更新后也不抽正文"
+    },
+    {
       "id": "eia_energy",
       "name": "U.S. EIA · Today in Energy",
       "tier": 0,
@@ -493,6 +636,222 @@
       "topics": ["ai_research", "ai_compute", "ai_industry", "tech"],
       "enabled": true,
       "note": "工程与研究采编：AI 系统、芯片、机器人和产业实践"
+    },
+    {
+      "id": "google_ai_blog", "name": "Google · AI News", "tier": 0,
+      "group": "google", "owner": "alphabet", "country": "US", "region": "us",
+      "source_type": "company_primary", "source_role": "official", "kind": "rss",
+      "url": "https://blog.google/technology/ai/rss/", "lang": "en", "max_items": 30,
+      "freshness_hours": 168, "topics": ["ai_models", "ai_research", "ai_industry", "tech"],
+      "enabled": true, "note": "AI 一次信源：Google 模型、产品和研究公告"
+    },
+    {
+      "id": "meta_engineering_ai", "name": "Meta Engineering · AI Research", "tier": 0,
+      "group": "meta", "owner": "meta", "country": "US", "region": "us",
+      "source_type": "company_primary", "source_role": "official", "kind": "rss",
+      "url": "https://engineering.fb.com/category/ai-research/feed/", "lang": "en", "max_items": 30,
+      "freshness_hours": 720, "topics": ["ai_research", "ai_models", "ai_open_source", "tech"],
+      "enabled": true, "note": "AI 一次信源：Meta 工程与 AI 研究发布"
+    },
+    {
+      "id": "github_ai_blog", "name": "GitHub · AI & ML", "tier": 0,
+      "group": "github", "owner": "microsoft", "country": "US", "region": "us",
+      "source_type": "company_primary", "source_role": "official", "kind": "rss",
+      "url": "https://github.blog/ai-and-ml/feed/", "lang": "en", "max_items": 30,
+      "freshness_hours": 336, "topics": ["ai_open_source", "ai_industry", "tech"],
+      "enabled": true, "note": "AI 一次信源：GitHub AI 开发工具与开源生态公告"
+    },
+    {
+      "id": "cloudflare_ai_blog", "name": "Cloudflare · AI", "tier": 0,
+      "group": "cloudflare", "owner": "cloudflare", "country": "US", "region": "us",
+      "source_type": "company_primary", "source_role": "official", "kind": "rss",
+      "url": "https://blog.cloudflare.com/tag/ai/rss/", "lang": "en", "max_items": 30,
+      "freshness_hours": 720, "topics": ["ai_compute", "ai_models", "ai_industry", "tech"],
+      "enabled": true, "note": "AI 一次信源：边缘推理、平台与基础设施公告"
+    },
+    {
+      "id": "redhat_ai_blog", "name": "Red Hat · Artificial Intelligence", "tier": 0,
+      "group": "redhat", "owner": "ibm", "country": "US", "region": "us",
+      "source_type": "company_primary", "source_role": "official", "kind": "rss",
+      "url": "https://www.redhat.com/en/rss/blog/channel/artificial-intelligence", "lang": "en", "max_items": 30,
+      "freshness_hours": 336, "topics": ["ai_open_source", "ai_compute", "ai_industry", "tech"],
+      "enabled": true, "note": "AI 一次信源：企业开源 AI 平台与工程公告"
+    },
+    {
+      "id": "amazon_science", "name": "Amazon Science · AI", "tier": 0,
+      "group": "amazon", "owner": "amazon", "country": "US", "region": "us",
+      "source_type": "research_primary", "source_role": "official", "kind": "rss",
+      "url": "https://www.amazon.science/index.rss", "lang": "en", "max_items": 30,
+      "freshness_hours": 336, "topics": ["ai_research", "ai_models", "tech"],
+      "enabled": true, "note": "AI 一次信源：Amazon 研究论文与科学成果"
+    },
+    {
+      "id": "nvidia_research", "name": "NVIDIA Research", "tier": 0,
+      "group": "nvidia", "owner": "nvidia", "country": "US", "region": "us",
+      "source_type": "research_primary", "source_role": "official", "kind": "rss",
+      "url": "https://research.nvidia.com/rss.xml", "lang": "en", "max_items": 30,
+      "freshness_hours": 336, "topics": ["ai_research", "ai_compute", "ai_models", "tech"],
+      "enabled": true, "note": "AI 一次信源：NVIDIA 研究论文与项目"
+    },
+    {
+      "id": "the_verge_ai", "name": "The Verge · AI", "tier": 1,
+      "group": "the_verge", "owner": "vox_media", "country": "US", "region": "us",
+      "source_type": "newsroom", "source_role": "reporting", "kind": "rss",
+      "url": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml", "lang": "en", "max_items": 30,
+      "freshness_hours": 168, "topics": ["ai_models", "ai_governance", "ai_industry", "tech"],
+      "enabled": true, "note": "独立科技采编：AI 产品、公司与政策影响"
+    },
+    {
+      "id": "the_decoder_ai", "name": "The Decoder · AI", "tier": 1,
+      "group": "the_decoder", "owner": "the_decoder", "country": "DE", "region": "eu",
+      "source_type": "specialist_newsroom", "source_role": "reporting", "kind": "rss",
+      "url": "https://the-decoder.com/feed/", "lang": "en", "max_items": 30,
+      "freshness_hours": 168, "topics": ["ai_models", "ai_research", "ai_industry", "tech"],
+      "enabled": true, "note": "欧洲 AI 专业采编，补充模型与研究跟进"
+    },
+    {
+      "id": "nature_machine_learning", "name": "Nature · Machine Learning", "tier": 1,
+      "group": "nature", "owner": "springer_nature", "country": "GB", "region": "eu",
+      "source_type": "scientific_publisher", "source_role": "reporting", "kind": "rss",
+      "url": "https://www.nature.com/subjects/machine-learning.rss", "lang": "en", "max_items": 30,
+      "freshness_hours": 720, "topics": ["ai_research", "tech"],
+      "enabled": true, "note": "独立学术出版源；是否同行评审须按原文类型核验"
+    },
+    {
+      "id": "mit_tech_review_ai", "name": "MIT Technology Review · AI", "tier": 1,
+      "group": "mit_tech_review", "owner": "mit", "country": "US", "region": "us",
+      "source_type": "newsroom", "source_role": "reporting", "kind": "rss",
+      "url": "https://www.technologyreview.com/topic/artificial-intelligence/feed/", "lang": "en", "max_items": 30,
+      "freshness_hours": 168, "topics": ["ai_models", "ai_research", "ai_governance", "tech"],
+      "enabled": true, "note": "独立科技采编：AI 研究、治理与产业趋势"
+    },
+    {
+      "id": "ai_business", "name": "AI Business", "tier": 1,
+      "group": "ai_business", "owner": "informa", "country": "US", "region": "us",
+      "source_type": "specialist_newsroom", "source_role": "reporting", "kind": "rss",
+      "url": "https://aibusiness.com/rss.xml", "lang": "en", "max_items": 30,
+      "freshness_hours": 168, "topics": ["ai_industry", "ai_models", "ai_governance", "tech"],
+      "enabled": true, "note": "企业 AI 专业采编，关注部署、商业化与治理"
+    },
+    {
+      "id": "techxplore_ai", "name": "Tech Xplore · AI", "tier": 1,
+      "group": "techxplore", "owner": "science_x", "country": "GB", "region": "eu",
+      "source_type": "science_newsroom", "source_role": "reporting", "kind": "rss",
+      "url": "https://techxplore.com/rss-feed/machine-learning-ai-news/", "lang": "en", "max_items": 30,
+      "freshness_hours": 168, "topics": ["ai_research", "ai_models", "tech"],
+      "enabled": true, "note": "独立科学技术报道：机器学习与 AI 研究"
+    },
+    {
+      "id": "quanta_ai", "name": "Quanta Magazine · AI", "tier": 1,
+      "group": "quanta", "owner": "simons_foundation", "country": "US", "region": "us",
+      "source_type": "science_newsroom", "source_role": "reporting", "kind": "rss",
+      "url": "https://www.quantamagazine.org/tag/artificial-intelligence/feed/", "lang": "en", "max_items": 20,
+      "freshness_hours": 2160, "topics": ["ai_research", "tech"],
+      "enabled": true, "note": "非营利科学采编：AI 理论、研究和方法论"
+    },
+    {
+      "id": "siliconangle_ai", "name": "SiliconANGLE · AI", "tier": 1,
+      "group": "siliconangle", "owner": "siliconangle_media", "country": "US", "region": "us",
+      "source_type": "specialist_newsroom", "source_role": "reporting", "kind": "rss",
+      "url": "https://siliconangle.com/category/ai/feed/", "lang": "en", "max_items": 30,
+      "freshness_hours": 168, "topics": ["ai_industry", "ai_compute", "ai_models", "tech"],
+      "enabled": true, "note": "企业科技采编：AI 基础设施、融资与产品"
+    },
+    {
+      "id": "ai_news", "name": "AI News", "tier": 2,
+      "group": "ai_news", "owner": "techforge_media", "country": "GB", "region": "eu",
+      "source_type": "specialist_newsroom", "source_role": "reporting", "kind": "rss",
+      "url": "https://www.artificialintelligence-news.com/feed/", "lang": "en", "max_items": 30,
+      "freshness_hours": 168, "topics": ["ai_industry", "ai_models", "ai_governance", "tech"],
+      "enabled": true, "note": "AI 专业媒体；用于线索和独立报道，不替代一次来源"
+    },
+    {
+      "id": "unite_ai", "name": "Unite.AI", "tier": 2,
+      "group": "unite_ai", "owner": "unite_ai", "country": "CA", "region": "us",
+      "source_type": "specialist_newsroom", "source_role": "reporting", "kind": "rss",
+      "url": "https://www.unite.ai/feed/", "lang": "en", "max_items": 30,
+      "freshness_hours": 168, "topics": ["ai_models", "ai_industry", "ai_research", "tech"],
+      "enabled": true, "note": "AI 专业媒体；较低层级用于补充线索与采访"
+    },
+    {
+      "id": "databricks_blog", "name": "Databricks · Engineering & AI", "tier": 0,
+      "group": "databricks", "owner": "databricks", "country": "US", "region": "us",
+      "source_type": "company_primary", "source_role": "official", "kind": "rss",
+      "url": "https://www.databricks.com/feed", "lang": "en", "max_items": 30,
+      "freshness_hours": 336, "topics": ["ai_models", "ai_compute", "ai_industry", "tech"],
+      "enabled": true, "note": "AI 一次信源：Lakehouse、模型训练与企业 AI 平台发布"
+    },
+    {
+      "id": "azure_ai_blog", "name": "Microsoft Azure · AI", "tier": 0,
+      "group": "microsoft", "owner": "microsoft", "country": "US", "region": "us",
+      "source_type": "company_primary", "source_role": "official", "kind": "rss",
+      "url": "https://azure.microsoft.com/en-us/blog/category/ai-machine-learning/feed/", "lang": "en", "max_items": 30,
+      "freshness_hours": 720, "topics": ["ai_models", "ai_compute", "ai_industry", "tech"],
+      "enabled": true, "note": "AI 一次信源：Azure AI 产品、模型服务与基础设施公告"
+    },
+    {
+      "id": "together_ai_blog", "name": "Together AI · Blog", "tier": 0,
+      "group": "together_ai", "owner": "together_ai", "country": "US", "region": "us",
+      "source_type": "company_primary", "source_role": "official", "kind": "rss",
+      "url": "https://www.together.ai/blog/rss.xml", "lang": "en", "max_items": 30,
+      "freshness_hours": 336, "topics": ["ai_models", "ai_compute", "ai_open_source", "tech"],
+      "enabled": true, "note": "AI 一次信源：开放模型、推理平台与训练基础设施发布"
+    },
+    {
+      "id": "mlcommons_news", "name": "MLCommons · News", "tier": 0,
+      "group": "mlcommons", "owner": "mlcommons", "country": "US", "region": "global",
+      "source_type": "standards_primary", "source_role": "official", "kind": "rss",
+      "url": "https://mlcommons.org/feed/", "lang": "en", "max_items": 30,
+      "freshness_hours": 2160, "topics": ["ai_research", "ai_compute", "ai_governance", "tech"],
+      "enabled": false, "note": "当前抓取被站点返回 403；恢复稳定前不计入一次源门禁"
+    },
+    {
+      "id": "lf_ai_data", "name": "Linux Foundation AI & Data", "tier": 0,
+      "group": "lf_ai_data", "owner": "linux_foundation", "country": "US", "region": "global",
+      "source_type": "foundation_primary", "source_role": "official", "kind": "rss",
+      "url": "https://lfaidata.foundation/feed/", "lang": "en", "max_items": 30,
+      "freshness_hours": 2160, "topics": ["ai_open_source", "ai_governance", "ai_industry", "tech"],
+      "enabled": true, "note": "AI 一次信源：开源基金会项目、治理与生态公告"
+    },
+    {
+      "id": "wandb_fully_connected", "name": "Weights & Biases · Fully Connected", "tier": 0,
+      "group": "weights_biases", "owner": "weights_biases", "country": "US", "region": "us",
+      "source_type": "company_primary", "source_role": "official", "kind": "rss",
+      "url": "https://wandb.ai/fully-connected/rss.xml", "lang": "en", "max_items": 30,
+      "freshness_hours": 720, "topics": ["ai_research", "ai_models", "ai_industry", "tech"],
+      "enabled": true, "note": "AI 一次信源：模型实验、评测与 MLOps 工程发布"
+    },
+    {
+      "id": "uk_ai_security_institute", "name": "UK AI Security Institute", "tier": 0,
+      "group": "uk_aisi", "owner": "uk_government", "country": "GB", "region": "eu",
+      "source_type": "government_primary", "source_role": "official", "kind": "rss",
+      "url": "https://www.gov.uk/government/organisations/ai-security-institute.atom", "lang": "en", "max_items": 30,
+      "freshness_hours": 2160, "topics": ["ai_governance", "ai_research", "tech"],
+      "enabled": false, "note": "可解析但长期无新内容；恢复活跃前不计入一次源门禁"
+    },
+    {
+      "id": "tensorflow_blog", "name": "TensorFlow · Blog", "tier": 0,
+      "group": "tensorflow", "owner": "google", "country": "US", "region": "global",
+      "source_type": "project_primary", "source_role": "official", "kind": "rss",
+      "url": "https://blog.tensorflow.org/feeds/posts/default?alt=rss", "lang": "en", "max_items": 30,
+      "freshness_hours": 720, "topics": ["ai_research", "ai_models", "ai_open_source", "tech"],
+      "enabled": true, "note": "AI 一次信源：TensorFlow 版本、研究与生态发布"
+    },
+    {
+      "id": "mozilla_ai_blog", "name": "Mozilla.ai · Blog", "tier": 0,
+      "group": "mozilla_ai", "owner": "mozilla", "country": "US", "region": "global",
+      "source_type": "company_primary", "source_role": "official", "kind": "rss",
+      "url": "https://blog.mozilla.ai/rss/", "lang": "en", "max_items": 30,
+      "freshness_hours": 720, "topics": ["ai_open_source", "ai_governance", "ai_models", "tech"],
+      "enabled": true, "note": "AI 一次信源：Mozilla AI 项目与可信开放 AI 发布；观点文仍按机构声明处理"
+    },
+    {
+      "id": "sambanova_blog", "name": "SambaNova · AI Systems", "tier": 0,
+      "group": "sambanova", "owner": "sambanova", "country": "US", "region": "us",
+      "source_type": "company_primary", "source_role": "official", "kind": "rss",
+      "url": "https://www.sambanova.ai/blog/rss.xml", "lang": "en", "max_items": 30,
+      "freshness_hours": 720, "topics": ["ai_compute", "ai_models", "ai_industry", "tech"],
+      "enabled": true, "note": "AI 一次信源：AI 系统与模型平台公告；性能数据仅视为厂商声明"
     },
     {
       "id": "xinhua_fortune",

@@ -50,6 +50,25 @@ class BackupTests(unittest.TestCase):
                              list(range(1, store.SCHEMA_VERSION + 1)))
             conn.close()
 
+    def test_foreign_keys_and_claim_replacement_remove_stale_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            conn = store.connect(Path(td) / "claims.db"); store.init(conn)
+            self.assertEqual(conn.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+            conn.execute("INSERT INTO items(id,source_id,title) VALUES('i','s','claim')")
+            conn.execute("INSERT INTO clusters(id,headline) VALUES('c','claim')")
+            payload = {"id": "v1", "text": "claim", "status": "single_report",
+                       "independent_groups": 1, "evidence": [{
+                           "item_id": "i", "quote": "claim", "quote_field": "title",
+                           "quote_start": 0, "quote_end": 5, "quote_hash": "x",
+                           "relation": "support"}]}
+            store.replace_cluster_claims(conn, "c", [payload])
+            payload["id"] = "v2"
+            store.replace_cluster_claims(conn, "c", [payload])
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM claim_evidence").fetchone()[0], 1)
+            self.assertEqual(conn.execute("SELECT relation FROM claim_evidence").fetchone()[0],
+                             "support")
+            conn.close()
+
 
 if __name__ == "__main__":
     unittest.main()

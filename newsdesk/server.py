@@ -10,7 +10,7 @@ import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import alerting, config, digest, entities, evidence, markets, ops, pipeline, quality, search, store
+from . import alerting, config, digest, entities, evidence, markets, ops, pipeline, quality, research, search, store
 from .normalize import now_ts
 
 _refresh_lock = threading.Lock()
@@ -330,6 +330,9 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
                             "region", "cn" if item.get("lang", "zh") == "zh" else "global")
                         c["items"].append(item)
                     c["evidence"] = evidence.analyze(c["items"], c.get("llm"))
+                    persisted_claims = store.cluster_claims(conn, cid)
+                    if persisted_claims:
+                        c["evidence"]["claims"] = persisted_claims
                     c["entities"] = entities.cluster_links(conn, cid)
                     c["assets"] = [x for x in c["entities"] if x.get("symbol")]
                     return self._json(c)
@@ -416,6 +419,11 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
 
                 if p == "/api/quality":
                     return self._json(quality.scorecard(conn, reg, now_ts()))
+
+                if p == "/api/research":
+                    question = (q.get("q") or "").strip()
+                    limit = max(1, min(20, int(q.get("limit", 8))))
+                    return self._json(research.answer(conn, question, limit))
 
                 if p == "/api/ai-radar":
                     hours = min(24 * 30, int(q.get("hours", 72)))

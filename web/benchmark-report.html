@@ -22,7 +22,7 @@
   <div class="eyebrow">Competitive benchmark · delivery report · 2026-09-06</div>
   <h1>NEWSDESK 横向评估<br>昨天完成了什么，离顶级终端还有多远</h1>
   <p>这不是一份宣传稿。它把 NEWSDESK 与 Bloomberg Terminal、LSEG Workspace、FactSet、AlphaSense、Dow Jones Factiva 和 Ground News 放进同一张能力地图，明确已经交付的工程能力、尚未获得的商业数据护城河，以及下一阶段应当怎样追赶。</p>
-  <div class="stamp"><span>评估口径：0–5 分</span><span>实测基线：3,850 条稿件</span><span>AI 专线：11</span><span>公开数据 / 本地优先</span><span>非交易执行终端</span></div>
+  <div class="stamp"><span>评估口径：0–5 分</span><span>实测基线：4,382 条稿件</span><span>AI 专线：36</span><span>公开数据 / 本地优先</span><span>非交易执行终端</span></div>
 </header>
 <main class="wrap">
 <nav class="nav"><a href="#summary">结论</a><a href="#yesterday">昨日进展</a><a href="#matrix">综合横评</a><a href="#ai-benchmark">AI/科技横评</a><a href="#gaps">差距诊断</a><a href="#roadmap">下一步</a><a href="#sources">依据</a><a href="/">返回终端</a></nav>
@@ -30,14 +30,15 @@
 <section class="section" id="summary">
   <div class="eyebrow">01 · Executive summary</div><h2>结论先行</h2>
   <p class="lead">NEWSDESK 已经从“RSS 页面”升级为一个可审计的公开新闻情报终端：能聚合、去重、跨语聚类、解释证据、关联资产、监控事件并进行恢复演练。但它目前最接近的是<strong>轻量级 AlphaSense / Factiva 式公开信息工作台</strong>，不是 Bloomberg 或 LSEG 的替代品。</p>
-  <div class="grid"><div class="card"><div class="metric good">33</div><div class="label">硬质量门禁通过</div></div><div class="card"><div class="metric">6</div><div class="label">诚实暴露的阶段预警</div></div><div class="card"><div class="metric good">83/83</div><div class="label">自动化测试</div></div><div class="card"><div class="metric good">239</div><div class="label">近 72H AI 事件</div></div></div>
+  <div class="grid"><div class="card"><div class="metric good">45</div><div class="label">质量门禁通过</div></div><div class="card"><div class="metric">6</div><div class="label">诚实暴露的阶段预警</div></div><div class="card"><div class="metric good">93/93</div><div class="label">自动化测试</div></div><div class="card"><div class="metric good">350</div><div class="label">近 72H AI 事件</div></div></div>
   <div class="callout"><b>核心判断：</b>短期不应复制 Bloomberg 的“大而全”，应建立差异化：公开一次信源优先、中文政策与全球新闻融合、每个结论可追溯、本地私有部署、可由 Agent 自动监控。</div>
   <div class="callout warning"><b>不可跨越的边界：</b>没有交易所授权实时行情、Bloomberg/Reuters/AP 等付费全文、经纪交易网络、监管通讯和几十年实体主数据。公开抓取不能合法或可靠地替代这些能力。</div>
 </section>
 
 <section class="section" id="yesterday">
   <div class="eyebrow">02 · Yesterday</div><h2>昨天完成了哪些工作</h2>
-  <div class="done"><b>全球信源与数据</b><span>启用源增至 42 个、35 个独立 owner，覆盖中/英/葡语和 6 个区域；AI 专线包含 OpenAI、NVIDIA、Microsoft Research、MIT、arXiv、Apple ML、AWS ML、IEEE、WIRED、Ars 与 TechCrunch。完成 3,850 条稿件、1,406 个事件簇的生产重算。</span></div>
+  <div class="done"><b>全球信源与数据</b><span>启用源增至 67 个、55 个独立 owner，覆盖中/英/葡语和 6 个区域；36 条 AI 专线含 21 个一次源、19 个近 30 天活跃一次源和 15 个独立/专业采编源。完成 4,382 条稿件、3,447 个事件簇的 Schema v10 全历史生产重算。</span></div>
+  <div class="done"><b>Claim 证据与研究</b><span>Schema 升至 v10，3,303 条 claims 对应的 4,364 条引用全部保存支持/反驳/待判定关系、置信度和方法，并通过原文切片和 hash 校验；孤儿引用为 0。</span></div>
   <div class="done"><b>AI / 科技实体图谱</b><span>148 个 canonical entity，其中 109 家公司，并覆盖模型、实验室、AI 芯片和开源项目；上下文消歧避免将人名、星座与普通词误识别为技术实体。</span></div>
   <div class="done"><b>事件、证据与聚类</b><span>聚合站、社区和单一官方声明不再冒充独立媒体印证；修复 iPhone/Mac、隐私/反垄断、游戏/安全收购等误聚类；增加跨语金额数量级和币种归一。</span></div>
   <div class="done"><b>实体与检索</b><span>Schema 升至 v7；建立 canonical entity、证券代码和持久关系；上线 FTS5、服务端 <code>asset:MSFT</code> 查询，并修复 C++、S&amp;P 500、%、_ 等特殊搜索。</span></div>
@@ -51,12 +52,12 @@
   <div class="eyebrow">03 · Competitive matrix</div><h2>与顶级终端横向比较</h2>
   <p class="legend">评分：5=行业领先；4=成熟；3=可用于生产；2=基础可用；1=原型；0=没有。商业产品能力根据其官方公开说明归纳，不代表采购评测或价格承诺。</p>
   <div class="matrix-wrap"><table><thead><tr><th>能力</th><th>NEWSDESK</th><th>Bloomberg Terminal</th><th>LSEG Workspace</th><th>FactSet</th><th>AlphaSense</th><th>Factiva</th><th>Ground News</th></tr></thead><tbody>
-  <tr><td>全球授权新闻深度</td><td class="ours"><span class="score s2">2/5</span><br>42 个公开源</td><td class="winner"><span class="score s5">5/5</span><br>自有 newsroom + 授权</td><td><span class="score s5">5/5</span><br>Reuters + 第三方</td><td><span class="score s4">4/5</span></td><td><span class="score s4">4/5</span></td><td><span class="score s5">5/5</span><br>大规模档案</td><td><span class="score s3">3/5</span></td></tr>
+  <tr><td>全球授权新闻深度</td><td class="ours"><span class="score s2">2/5</span><br>67 个公开源</td><td class="winner"><span class="score s5">5/5</span><br>自有 newsroom + 授权</td><td><span class="score s5">5/5</span><br>Reuters + 第三方</td><td><span class="score s4">4/5</span></td><td><span class="score s4">4/5</span></td><td><span class="score s5">5/5</span><br>大规模档案</td><td><span class="score s3">3/5</span></td></tr>
   <tr><td>实时市场数据</td><td class="ours"><span class="score s1">1/5</span><br>公开延迟背景数据</td><td class="winner"><span class="score s5">5/5</span></td><td><span class="score s5">5/5</span></td><td><span class="score s5">5/5</span></td><td><span class="score s1">1/5</span></td><td><span class="score s0">0/5</span></td><td><span class="score s0">0/5</span></td></tr>
   <tr><td>公司 / 证券主数据</td><td class="ours"><span class="score s3">3/5</span><br>109 家重点公司 + 4 类技术实体</td><td class="winner"><span class="score s5">5/5</span></td><td><span class="score s5">5/5</span></td><td><span class="score s5">5/5</span></td><td><span class="score s4">4/5</span></td><td><span class="score s2">2/5</span></td><td><span class="score s1">1/5</span></td></tr>
   <tr><td>新闻检索与档案</td><td class="ours"><span class="score s3">3/5</span><br>FTS + 结构化过滤</td><td><span class="score s5">5/5</span></td><td><span class="score s5">5/5</span></td><td><span class="score s4">4/5</span></td><td class="winner"><span class="score s5">5/5</span><br>AI / 语义检索</td><td class="winner"><span class="score s5">5/5</span><br>长期档案</td><td><span class="score s2">2/5</span></td></tr>
   <tr><td>同事件聚合与证据解释</td><td class="ours winner"><span class="score s4">4/5</span><br>owner-aware、可审计</td><td><span class="score s4">4/5</span></td><td><span class="score s4">4/5</span></td><td><span class="score s3">3/5</span></td><td><span class="score s4">4/5</span></td><td><span class="score s2">2/5</span></td><td><span class="score s4">4/5</span><br>偏见/所有权视角</td></tr>
-  <tr><td>AI 摘要 / 研究问答</td><td class="ours"><span class="score s2">2/5</span><br>可选 LLM</td><td><span class="score s4">4/5</span></td><td><span class="score s4">4/5</span></td><td><span class="score s4">4/5</span></td><td class="winner"><span class="score s5">5/5</span></td><td><span class="score s3">3/5</span></td><td><span class="score s2">2/5</span></td></tr>
+  <tr><td>AI 摘要 / 研究问答</td><td class="ours"><span class="score s3">3/5</span><br>逐句引用研究 + 可选 LLM</td><td><span class="score s4">4/5</span></td><td><span class="score s4">4/5</span></td><td><span class="score s4">4/5</span></td><td class="winner"><span class="score s5">5/5</span></td><td><span class="score s3">3/5</span></td><td><span class="score s2">2/5</span></td></tr>
   <tr><td>告警与工作流</td><td class="ours"><span class="score s3">3/5</span><br>结构化查询 + webhook</td><td><span class="score s5">5/5</span></td><td><span class="score s5">5/5</span></td><td><span class="score s5">5/5</span></td><td><span class="score s4">4/5</span></td><td><span class="score s4">4/5</span></td><td><span class="score s2">2/5</span></td></tr>
   <tr><td>交易 / 合规通讯</td><td class="ours"><span class="score s0">0/5</span></td><td class="winner"><span class="score s5">5/5</span></td><td><span class="score s5">5/5</span></td><td><span class="score s3">3/5</span></td><td><span class="score s0">0/5</span></td><td><span class="score s0">0/5</span></td><td><span class="score s0">0/5</span></td></tr>
   <tr><td>中文政策一次信源</td><td class="ours winner"><span class="score s4">4/5</span><br>政府/央行/统计直连</td><td><span class="score s4">4/5</span></td><td><span class="score s4">4/5</span></td><td><span class="score s3">3/5</span></td><td><span class="score s3">3/5</span></td><td><span class="score s3">3/5</span></td><td><span class="score s1">1/5</span></td></tr>
@@ -70,10 +71,10 @@
   <div class="eyebrow">04 · AI intelligence benchmark</div><h2>AI / 科技垂直终端，真正要对标谁</h2>
   <p class="lead">Bloomberg 和 LSEG 定义金融基础设施，但 AI 科技情报还应对标 AlphaSense 的研究问答、Feedly AI 的主题监控、Techmeme 的事件编排、PitchBook / CB Insights 的公司与融资图谱，以及 arXiv / GitHub 的研发前沿。</p>
   <div class="matrix-wrap"><table><thead><tr><th>目标能力</th><th>领先参照</th><th>NEWSDESK 当前</th><th>应形成的差异化</th><th>验收指标</th></tr></thead><tbody>
-    <tr><td>实验室 / 模型发布雷达</td><td>AlphaSense、Feedly AI</td><td class="ours">11 个专线，含 6 个一次源</td><td>官方发布与独立报道分层，不把厂商自述当事实确认</td><td>核心实验室 ≥20；漏报率 ≤5%</td></tr>
+    <tr><td>实验室 / 模型发布雷达</td><td>AlphaSense、Feedly AI</td><td class="ours">36 个专线，含 21 个一次源、15 个独立采编源</td><td>官方发布与独立报道分层，不把厂商自述当事实确认</td><td>核心实验室 ≥20；漏报率 ≤5%</td></tr>
     <tr><td>论文到产业事件链</td><td>arXiv、Papers with Code</td><td class="ours">arXiv cs.AI 线索已接入</td><td>论文→代码→模型→产品→公司→资产同图关联</td><td>重点论文 80% 有代码/机构/任务标签</td></tr>
     <tr><td>公司、融资与人才信号</td><td>PitchBook、CB Insights</td><td class="ours">109 家重点科技公司，尚未系统化融资/人才流</td><td>公开融资、招聘、算力采购与高管变动形成领先指标</td><td>公司 ≥500；关键字段完整率 ≥90%</td></tr>
-    <tr><td>带引用的研究问答</td><td>AlphaSense</td><td class="ours">事件证据链 + 可选 LLM</td><td>每句话绑定原文片段、时间与来源角色；冲突答案并列</td><td>引用覆盖率 100%；事实准确率 ≥95%</td></tr>
+    <tr><td>带引用的研究问答</td><td>AlphaSense</td><td class="ours">抽取式逐句引用已上线；支持/反驳/待判定分栏</td><td>每句话绑定原文片段、时间与来源角色；冲突答案并列</td><td>引用覆盖率 100%；事实准确率 ≥95%</td></tr>
     <tr><td>热点编排与去噪</td><td>Techmeme</td><td class="ours">跨语聚类、owner 去重</td><td>中文政策、海外实验室和开发者社区统一事件页</td><td>人工金标 B-cubed F1 ≥0.90</td></tr>
     <tr><td>开源与开发者动量</td><td>GitHub、Hugging Face</td><td class="ours">主题已建，数据仍浅</td><td>star/download/release/model-card 变化和新闻联动</td><td>Top 200 项目日级快照</td></tr>
   </tbody></table></div>
@@ -82,7 +83,7 @@
 <section class="section" id="gaps">
   <div class="eyebrow">05 · Gap diagnosis</div><h2>当前进度与关键差距</h2>
   <div class="two"><div class="card"><h3>工程成熟度（内部目标）</h3><div class="bar-row"><span>采集可靠性</span><div class="bar"><i style="width:82%"></i></div><b>82</b></div><div class="bar-row"><span>证据可解释</span><div class="bar"><i style="width:84%"></i></div><b>84</b></div><div class="bar-row"><span>检索与监控</span><div class="bar"><i style="width:72%"></i></div><b>72</b></div><div class="bar-row"><span>运维安全</span><div class="bar"><i style="width:80%"></i></div><b>80</b></div><div class="bar-row"><span>市场数据</span><div class="bar"><i style="width:24%"></i></div><b>24</b></div><div class="bar-row"><span>机构工作流</span><div class="bar"><i style="width:12%"></i></div><b>12</b></div></div>
-  <div class="card"><h3>当前质量门禁</h3><ul><li class="good">33 项硬门禁通过，0 项失败</li><li class="good">11 个 AI 专线、6 个一次源、72H 约 239 个 AI 事件</li><li class="good">109 家公司及 4 类 AI 技术实体门禁通过</li><li class="warn">国际稿 15.05%，目标 ≥20%</li><li class="warn">最大 owner 42.84%，目标 ≤35%</li><li class="warn">总体独立印证率 5.81%，目标 ≥10%</li><li class="warn">AI 独立印证率 1.26%，目标 ≥10%</li><li class="warn">行情历史尚未自然积累到 7 天</li><li class="warn">300 对聚类集为模板回归集，尚非双人独立标注金标</li></ul></div></div>
+  <div class="card"><h3>当前质量门禁</h3><ul><li class="good">45 项门禁通过，0 项失败</li><li class="good">36 个 AI 专线、21 个一次源、15 个独立采编源、72H 350 个 AI 事件</li><li class="good">3,303 条 claims、4,364 条引用的关系、切片和 hash 校验全部通过</li><li class="warn">国际稿 15.13%，目标 ≥20%</li><li class="warn">最大 owner 43.60%，目标 ≤35%</li><li class="warn">总体独立印证率 5.92%，目标 ≥10%</li><li class="warn">AI 独立印证率 1.43%，目标 ≥10%</li><li class="warn">行情历史尚未自然积累到 7 天</li><li class="warn">已冻结 300 对真实样本，但尚待双人盲标和第三人仲裁</li></ul></div></div>
   <h3 style="margin-top:28px">为什么 Bloomberg / Reuters 能做到，而公开终端做不到</h3>
   <table><thead><tr><th>护城河</th><th>商业终端</th><th>NEWSDESK 当前策略</th></tr></thead><tbody><tr><td>内容权利</td><td>签约新闻社、交易所、研究机构和内容供应商</td><td>只使用允许访问的公开来源；保存链接与证据，不绕过付费墙</td></tr><tr><td>速度</td><td>专线、共址、编辑部和低延迟 feed</td><td>分钟级抓取，优化信息验证而非微秒级交易</td></tr><tr><td>实体图谱</td><td>几十年积累的证券、公司、人物和关系主数据</td><td>从官方 registry 和高价值观察列表逐步扩充</td></tr><tr><td>专业工作流</td><td>定价、模型、聊天、订单、合规和审计一体化</td><td>聚焦新闻 OSINT、证据链、Agent 告警和私有知识沉淀</td></tr></tbody></table>
 </section>

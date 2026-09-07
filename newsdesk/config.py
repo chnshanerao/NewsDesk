@@ -34,6 +34,15 @@ USER_AGENT = os.getenv(
 HTTP_TIMEOUT = int(os.getenv("NEWSDESK_TIMEOUT", "20"))
 FETCH_WORKERS = int(os.getenv("NEWSDESK_WORKERS", "6"))
 
+# ---- 正文预览（详情页『主要内容』）----
+# 只抽事件头条源的前几段：段数与字数双上限，不入全文。设 0 关闭抽取。
+BODY_MAX_PER_RUN = int(os.getenv("NEWSDESK_BODY_MAX_PER_RUN", "80"))
+BODY_TIMEOUT = int(os.getenv("NEWSDESK_BODY_TIMEOUT", "12"))
+BODY_MAX_PARAGRAPHS = int(os.getenv("NEWSDESK_BODY_MAX_PARAGRAPHS", "4"))
+BODY_MAX_CHARS = int(os.getenv("NEWSDESK_BODY_MAX_CHARS", "900"))
+# 摘要短于这个字数的稿件优先抽正文：那些页面没有摘要可退，抽不到就是开天窗。
+BODY_THIN_SUMMARY_CHARS = int(os.getenv("NEWSDESK_BODY_THIN_SUMMARY_CHARS", "80"))
+
 # ---- 聚类 ----
 CLUSTER_WINDOW_H = int(os.getenv("NEWSDESK_CLUSTER_WINDOW_H", "72"))  # 只在窗口内合并
 JACCARD_THRESHOLD = 0.42        # 字符二元组 Jaccard 相似度阈值
