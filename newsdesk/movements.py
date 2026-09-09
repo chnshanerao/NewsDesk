@@ -848,7 +848,10 @@ def trend_summary(conn, after: int | None = None) -> dict:
             "person_count": people_n, "generated_at": int(time.time())}
 
 
-PERIODS = ((7, "近 7 天"), (14, "近 14 天"), (30, "近 30 天"), (365, "近 12 月"), (0, "完整历史"))
+# 默认落在近 6 月：短窗口只够看单个动作，趋势（持续增/减仓、连续布局）要半年以上才显形。
+# 近 2 年用来看跨周期的方向。7/30 天保留给"最近有没有新动作"的快速一瞥。
+PERIODS = ((7, "近 7 天"), (30, "近 30 天"), (180, "近 6 月"), (365, "近 12 月"),
+           (730, "近 2 年"), (0, "完整历史"))
 
 
 def period_counts(conn) -> dict:
