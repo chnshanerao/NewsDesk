@@ -193,7 +193,124 @@ CREATE TABLE IF NOT EXISTS source_probes (
 CREATE INDEX IF NOT EXISTS idx_source_probes_ts ON source_probes(ts DESC,source_id);
 """
 
-SCHEMA_VERSION = 11
+MOVEMENT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS persons (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, name_zh TEXT, category TEXT NOT NULL,
+    roles_json TEXT NOT NULL DEFAULT '[]', regions_json TEXT NOT NULL DEFAULT '[]',
+    signal_prior REAL NOT NULL CHECK(signal_prior BETWEEN 0 AND 1),
+    commercial_conflict REAL NOT NULL DEFAULT 0 CHECK(commercial_conflict BETWEEN 0 AND 1),
+    political_conflict REAL NOT NULL DEFAULT 0 CHECK(political_conflict BETWEEN 0 AND 1),
+    promotional_intensity REAL NOT NULL DEFAULT 0 CHECK(promotional_intensity BETWEEN 0 AND 1),
+    privacy_class TEXT NOT NULL DEFAULT 'public_professional_actions_only',
+    review_status TEXT NOT NULL DEFAULT 'human_approved',
+    created_ts INTEGER NOT NULL, updated_ts INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS person_aliases (
+    person_id TEXT NOT NULL, alias TEXT NOT NULL, lang TEXT NOT NULL DEFAULT 'und',
+    normalized_alias TEXT NOT NULL,
+    PRIMARY KEY(person_id,normalized_alias),
+    FOREIGN KEY(person_id) REFERENCES persons(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_person_aliases_alias ON person_aliases(normalized_alias);
+CREATE TABLE IF NOT EXISTS person_affiliations (
+    id TEXT PRIMARY KEY, person_id TEXT NOT NULL, entity_id TEXT,
+    organization TEXT NOT NULL, role_code TEXT NOT NULL,
+    relationship_type TEXT NOT NULL, control_level TEXT NOT NULL,
+    valid_from_ts INTEGER, valid_to_ts INTEGER, time_precision TEXT NOT NULL DEFAULT 'unknown',
+    evidence_url TEXT, review_status TEXT NOT NULL DEFAULT 'human_approved',
+    created_ts INTEGER NOT NULL, updated_ts INTEGER NOT NULL,
+    FOREIGN KEY(person_id) REFERENCES persons(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_person_affiliations_person
+    ON person_affiliations(person_id,valid_from_ts);
+CREATE TABLE IF NOT EXISTS movement_events (
+    id TEXT PRIMARY KEY, cluster_id TEXT, action_type TEXT NOT NULL,
+    verb_code TEXT NOT NULL, actor_kind TEXT NOT NULL, actor_entity_id TEXT,
+    title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '', object_text TEXT,
+    occurred_from_ts INTEGER, occurred_to_ts INTEGER,
+    time_precision TEXT NOT NULL DEFAULT 'unknown', disclosed_ts INTEGER,
+    amount_value_text TEXT, amount_currency TEXT, amount_low_text TEXT,
+    amount_high_text TEXT, amount_basis TEXT, amount_usd_text TEXT,
+    fx_rate_text TEXT, fx_rate_date TEXT, geography_json TEXT NOT NULL DEFAULT '[]',
+    verification_status TEXT NOT NULL DEFAULT 'candidate',
+    workflow_status TEXT NOT NULL DEFAULT 'draft',
+    confidence REAL NOT NULL CHECK(confidence BETWEEN 0 AND 1),
+    materiality_score REAL NOT NULL CHECK(materiality_score BETWEEN 0 AND 1),
+    marketing_risk REAL NOT NULL DEFAULT 0 CHECK(marketing_risk BETWEEN 0 AND 1),
+    observed_fact TEXT NOT NULL DEFAULT '', analytical_boundary TEXT NOT NULL DEFAULT '',
+    unknowns_json TEXT NOT NULL DEFAULT '[]', extraction_method TEXT NOT NULL,
+    dedupe_key TEXT NOT NULL UNIQUE, created_ts INTEGER NOT NULL, updated_ts INTEGER NOT NULL,
+    FOREIGN KEY(cluster_id) REFERENCES clusters(id) ON DELETE SET NULL,
+    CHECK(actor_kind IN ('personal','controlled_institution','associated_institution','unknown')),
+    CHECK(verification_status IN ('candidate','verified','disputed','rejected')),
+    CHECK(workflow_status IN ('draft','reviewed','published','withdrawn'))
+);
+CREATE INDEX IF NOT EXISTS idx_movements_feed
+    ON movement_events(workflow_status,verification_status,disclosed_ts DESC,materiality_score DESC);
+CREATE INDEX IF NOT EXISTS idx_movements_occurred ON movement_events(occurred_from_ts DESC);
+CREATE TABLE IF NOT EXISTS movement_persons (
+    movement_id TEXT NOT NULL, person_id TEXT NOT NULL, role TEXT NOT NULL,
+    attribution_confidence REAL NOT NULL CHECK(attribution_confidence BETWEEN 0 AND 1),
+    control_basis TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY(movement_id,person_id,role),
+    FOREIGN KEY(movement_id) REFERENCES movement_events(id) ON DELETE CASCADE,
+    FOREIGN KEY(person_id) REFERENCES persons(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_movement_persons_person ON movement_persons(person_id,movement_id);
+CREATE TABLE IF NOT EXISTS movement_evidence (
+    id TEXT PRIMARY KEY, movement_id TEXT NOT NULL, item_id TEXT,
+    source_id TEXT, source_name TEXT, source_owner TEXT, source_role TEXT NOT NULL,
+    tier INTEGER, url TEXT NOT NULL, title TEXT, published_ts INTEGER, retrieved_ts INTEGER,
+    quote TEXT NOT NULL, quote_field TEXT NOT NULL DEFAULT 'summary',
+    quote_start INTEGER NOT NULL DEFAULT 0, quote_end INTEGER NOT NULL DEFAULT 0,
+    quote_hash TEXT NOT NULL, relation TEXT NOT NULL DEFAULT 'support',
+    independence_group TEXT, relation_confidence REAL NOT NULL DEFAULT 0,
+    original_lang TEXT, archived_ref TEXT,
+    UNIQUE(movement_id,url,quote_hash),
+    FOREIGN KEY(movement_id) REFERENCES movement_events(id) ON DELETE CASCADE,
+    FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_movement_evidence_event ON movement_evidence(movement_id,relation);
+CREATE TABLE IF NOT EXISTS movement_fact_citations (
+    movement_id TEXT NOT NULL, field_name TEXT NOT NULL, evidence_id TEXT NOT NULL,
+    PRIMARY KEY(movement_id,field_name,evidence_id),
+    FOREIGN KEY(movement_id) REFERENCES movement_events(id) ON DELETE CASCADE,
+    FOREIGN KEY(evidence_id) REFERENCES movement_evidence(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS movement_entities (
+    movement_id TEXT NOT NULL, entity_id TEXT NOT NULL, relation_type TEXT NOT NULL,
+    confidence REAL NOT NULL, PRIMARY KEY(movement_id,entity_id,relation_type),
+    FOREIGN KEY(movement_id) REFERENCES movement_events(id) ON DELETE CASCADE,
+    FOREIGN KEY(entity_id) REFERENCES entities(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS movement_theme_catalog (
+    id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name_zh TEXT NOT NULL,
+    name_en TEXT, kind TEXT NOT NULL, parent_id TEXT, review_status TEXT NOT NULL,
+    FOREIGN KEY(parent_id) REFERENCES movement_theme_catalog(id) ON DELETE SET NULL
+);
+CREATE TABLE IF NOT EXISTS movement_themes (
+    movement_id TEXT NOT NULL, theme_id TEXT NOT NULL,
+    assignment_method TEXT NOT NULL, confidence REAL NOT NULL,
+    PRIMARY KEY(movement_id,theme_id),
+    FOREIGN KEY(movement_id) REFERENCES movement_events(id) ON DELETE CASCADE,
+    FOREIGN KEY(theme_id) REFERENCES movement_theme_catalog(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_movement_themes_theme ON movement_themes(theme_id,movement_id);
+"""
+
+MOVEMENT_REVIEW_SCHEMA = """
+CREATE TABLE IF NOT EXISTS movement_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, movement_id TEXT NOT NULL,
+    previous_verification TEXT NOT NULL, new_verification TEXT NOT NULL,
+    previous_workflow TEXT NOT NULL, new_workflow TEXT NOT NULL,
+    reviewer TEXT NOT NULL, reason TEXT NOT NULL, reviewed_ts INTEGER NOT NULL,
+    FOREIGN KEY(movement_id) REFERENCES movement_events(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_movement_reviews_event
+    ON movement_reviews(movement_id,reviewed_ts DESC);
+"""
+
+SCHEMA_VERSION = 13
 
 
 def _ensure_column(conn, table, name, declaration):
@@ -273,6 +390,14 @@ def _item_body_preview(conn):
     _ensure_column(conn, "items", "body_ts", "INTEGER")
 
 
+def _movement_ledger(conn):
+    conn.executescript(MOVEMENT_SCHEMA)
+
+
+def _movement_review_audit(conn):
+    conn.executescript(MOVEMENT_REVIEW_SCHEMA)
+
+
 MIGRATIONS = (
     (1, "baseline", _baseline),
     (2, "evidence_and_source_health", _evidence_health),
@@ -285,6 +410,8 @@ MIGRATIONS = (
     (9, "claim_evidence_relations", _claim_relations),
     (10, "claim_relation_provenance", _claim_relation_provenance),
     (11, "item_body_preview", _item_body_preview),
+    (12, "person_and_movement_ledger", _movement_ledger),
+    (13, "movement_review_audit", _movement_review_audit),
 )
 
 
@@ -709,7 +836,10 @@ def recovery_drill(backup: Path) -> dict:
                 "SELECT name FROM sqlite_master WHERE type='table'")}
             required = {"items", "clusters", "source_health", "source_probes", "runs",
                         "entities", "cluster_entities", "market_ticks", "alerts",
-                        "alert_outbox", "alert_events"}
+                        "alert_outbox", "alert_events", "persons", "person_aliases",
+                        "person_affiliations", "movement_events", "movement_persons",
+                        "movement_evidence", "movement_fact_citations",
+                        "movement_theme_catalog", "movement_themes", "movement_reviews"}
             missing = sorted(required - tables)
             if missing:
                 raise RuntimeError(f"recovery missing tables: {', '.join(missing)}")

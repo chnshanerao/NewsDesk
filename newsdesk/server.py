@@ -10,7 +10,8 @@ import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import alerting, config, digest, entities, evidence, markets, ops, pipeline, quality, research, search, store
+from . import (alerting, config, digest, entities, evidence, markets, movements, ops,
+               pipeline, quality, research, search, store)
 from .normalize import now_ts
 
 _refresh_lock = threading.Lock()
@@ -139,6 +140,14 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
                   "source_role": s.get("source_role", config.source_role(s))}
         for s in reg.get("sources", [])
     }
+    # Catalog synchronization is a controlled startup task. Public GET requests
+    # remain read-only and can never delete or rewrite person history.
+    catalog_conn = store.connect()
+    try:
+        store.init(catalog_conn)
+        movements.sync_catalog(catalog_conn)
+    finally:
+        catalog_conn.close()
     class Handler(BaseHTTPRequestHandler):
         server_version = "newsdesk/1.0"
         protocol_version = "HTTP/1.1"
@@ -227,6 +236,10 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
                 return self._static("index.html")
             if p in ("/report", "/report.html"):
                 return self._static("benchmark-report.html")
+            if p in ("/movement-demo", "/movement-demo.html"):
+                return self._static("movement-demo.html")
+            if p in ("/movements", "/movements.html"):
+                return self._static("movements.html")
             if p.startswith("/static/"):
                 return self._static(p[len("/static/"):])
             if p == "/favicon.ico":
@@ -244,6 +257,60 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
 
             conn = store.connect()
             try:
+                if p == "/api/persons":
+                    return self._json({"items": movements.list_people(conn),
+                                       "generated_at": now_ts()})
+
+                if p == "/api/movement-themes":
+                    rows = [dict(row) for row in conn.execute(
+                        "SELECT t.*,COUNT(mt.movement_id) movement_count "
+                        "FROM movement_theme_catalog t LEFT JOIN movement_themes mt "
+                        "ON mt.theme_id=t.id GROUP BY t.id ORDER BY t.kind,t.name_zh")]
+                    return self._json({"items": rows, "generated_at": now_ts()})
+
+                if p == "/api/movements":
+                    try:
+                        limit = max(1, min(100, int(q.get("limit", 50))))
+                        offset = max(0, int(q.get("offset", 0)))
+                    except ValueError:
+                        return self._json({"error": "invalid pagination"}, 400)
+                    # Anonymous reads are intentionally unable to request drafts,
+                    # rejected records or internal review notes.
+                    return self._json(movements.list_events(
+                        conn, person=q.get("person"), theme=q.get("theme"),
+                        action_type=q.get("action_type"), region=q.get("region"),
+                        workflow="published", verification="verified",
+                        limit=limit, offset=offset))
+
+                if p == "/api/admin/movements":
+                    if not self._write_authenticated():
+                        return self._json({"error": "admin token required"}, 401)
+                    try:
+                        limit = max(1, min(100, int(q.get("limit", 50))))
+                        offset = max(0, int(q.get("offset", 0)))
+                    except ValueError:
+                        return self._json({"error": "invalid pagination"}, 400)
+                    workflow = q.get("workflow", "all")
+                    verification = q.get("verification", "all")
+                    if workflow not in {"published", "reviewed", "draft", "withdrawn", "all"}:
+                        return self._json({"error": "invalid workflow"}, 400)
+                    if verification not in {"candidate", "verified", "disputed", "rejected", "all"}:
+                        return self._json({"error": "invalid verification"}, 400)
+                    return self._json(movements.list_events(
+                        conn, person=q.get("person"), theme=q.get("theme"),
+                        action_type=q.get("action_type"), region=q.get("region"),
+                        workflow=workflow, verification=verification,
+                        limit=limit, offset=offset))
+
+                if p.startswith("/api/movement/"):
+                    movement_id = p.rsplit("/", 1)[-1]
+                    item = movements.get_event(conn, movement_id)
+                    if item and not (item["workflow_status"] == "published" and
+                                     item["verification_status"] == "verified"):
+                        item = None
+                    return self._json(item if item else {"error": "not found"},
+                                      200 if item else 404)
+
                 if p == "/api/feed":
                     limit = min(300, int(q.get("limit", 80)))
                     parsed = search.parse(q.get("q", ""))
@@ -726,12 +793,34 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
         def do_POST(self):
             u = urllib.parse.urlparse(self.path)
             if u.path not in ("/api/refresh", "/api/alerts", "/api/alert-events/read",
-                              "/api/watchlist"):
+                              "/api/watchlist") and not u.path.startswith("/api/movement-review/"):
                 return self._send(404, b"not found", "text/plain; charset=utf-8")
             if not self._same_origin_write():
                 return self._json({"ok": False, "msg": "拒绝跨站写操作"}, 403)
             if not self._write_authenticated():
                 return self._json({"ok": False, "msg": "需要管理令牌"}, 401)
+            if u.path.startswith("/api/movement-review/"):
+                try:
+                    size = int(self.headers.get("Content-Length", "0"))
+                    if size <= 0 or size > 16384:
+                        return self._json({"error": "invalid body"}, 400)
+                    body = json.loads(self.rfile.read(size))
+                    if not isinstance(body, dict):
+                        return self._json({"error": "invalid payload"}, 400)
+                    conn = store.connect()
+                    try:
+                        item = movements.review_event(
+                            conn, u.path.rsplit("/", 1)[-1],
+                            verification_status=str(body.get("verification_status") or "candidate"),
+                            workflow_status=str(body.get("workflow_status") or "draft"),
+                            reviewer="token-admin", reason=str(body.get("reason") or ""))
+                    finally:
+                        conn.close()
+                    return self._json({"ok": True, "item": item})
+                except LookupError as exc:
+                    return self._json({"error": str(exc)}, 404)
+                except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                    return self._json({"error": str(exc)}, 400)
             if u.path == "/api/alert-events/read":
                 try:
                     size = int(self.headers.get("Content-Length", "0"))

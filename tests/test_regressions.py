@@ -268,6 +268,63 @@ class ApiLanguageFilterTests(unittest.TestCase):
         self.assertIn("NEWSDESK 横向评估", body)
         self.assertIn("Bloomberg Terminal", body)
 
+    def test_movement_demo_is_served(self):
+        port = self.httpd.server_address[1]
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/movement-demo.html", timeout=3) as response:
+            body = response.read().decode("utf-8")
+        self.assertIn("看大佬们", body)
+        self.assertIn("言论进入主流的权重", body)
+
+    def test_production_movement_workbench_and_people_api(self):
+        port = self.httpd.server_address[1]
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/movements.html", timeout=3) as response:
+            body = response.read().decode("utf-8")
+        self.assertIn("看他们做什么", body)
+        self.assertIn("言论权重 0", body)
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/persons", timeout=3) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        self.assertGreaterEqual(len(payload["items"]), 30)
+
+    def test_public_movement_api_never_exposes_drafts(self):
+        conn = store.connect()
+        conn.execute(
+            "INSERT INTO movement_events(id,cluster_id,action_type,verb_code,actor_kind,title,"
+            "verification_status,workflow_status,confidence,materiality_score,observed_fact,"
+            "extraction_method,dedupe_key,created_ts,updated_ts) "
+            "VALUES('mov-private','zh-event','capital_allocate','invested','personal','private draft',"
+            "'verified','draft',.9,.9,'internal','test','private-key',1,1)")
+        conn.execute("INSERT INTO movement_persons VALUES(?,?,?,?,?)",
+                     ("mov-private", "person_sam_altman", "beneficial_owner", .9, "test"))
+        conn.commit(); conn.close()
+        port = self.httpd.server_address[1]
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/movements?workflow=all&verification=all",
+                timeout=3) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        self.assertEqual(payload["total"], 0)
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/movement/mov-private", timeout=3)
+        self.assertEqual(caught.exception.code, 404)
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/admin/movements", timeout=3)
+        self.assertEqual(caught.exception.code, 401)
+
+    def test_movement_pagination_is_bounded(self):
+        port = self.httpd.server_address[1]
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/movements?limit=abc", timeout=3)
+        self.assertEqual(caught.exception.code, 400)
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/movements?limit=-1", timeout=3)
+        self.assertEqual(caught.exception.code, 400)
+
     def test_cross_origin_write_is_rejected(self):
         port = self.httpd.server_address[1]
         req = urllib.request.Request(

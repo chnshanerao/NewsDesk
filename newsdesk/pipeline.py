@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import cluster as clustering
 from . import (alerting, article, config, credibility, entities, evidence, fetch,
-               store, verify_llm)
+               movements, store, verify_llm)
 from .normalize import now_ts
 
 
@@ -213,6 +213,22 @@ def run(conn, reg: dict, profile: dict, *, use_llm=False, only=None,
         sc = rescore(conn, reg, profile, window_h=window_h, log=log)
         log("▸ 正文预览")
         body = hydrate_bodies(conn, reg, log=log)
+        log("▸ 公开职业行动候选")
+        movement_sources = {
+            s["id"]: {**s, "owner": s.get("owner") or s.get("group") or s["id"],
+                      "source_role": s.get("source_role", config.source_role(s))}
+            for s in reg["sources"]
+        }
+        try:
+            movement = movements.extract_recent(
+                conn, movement_sources, now_ts() - (window_h or config.CLUSTER_WINDOW_H) * 3600)
+            log(f"  扫描 {movement['clusters_scanned']} 个事件簇，形成/更新 "
+                f"{movement['candidates']} 条行动候选（默认不公开）")
+        except Exception as exc:
+            # Experimental intelligence extraction must not take down the core news feed.
+            movement = {"clusters_scanned": 0, "candidates": 0,
+                        "error": f"{type(exc).__name__}: {exc}"}
+            log(f"  [MOVEMENT ERR] {movement['error']}")
         llm = {"n": 0, "ok": 0, "err": 0}
         if use_llm:
             log("▸ LLM 内容甄别")
@@ -226,7 +242,8 @@ def run(conn, reg: dict, profile: dict, *, use_llm=False, only=None,
         store.end_run(conn, run_id, n_fetched=ing["n_fetched"], n_new=ing["n_new"],
                       n_clusters=sc["n_clusters"], llm_used=use_llm,
                       note=f"llm_ok={llm['ok']} llm_err={llm['err']} alerts={alert_new}")
-        return {**ing, **sc, "llm": llm, "body": body, "alert_new": alert_new,
+        return {**ing, **sc, "llm": llm, "body": body, "movement": movement,
+                "alert_new": alert_new,
                 "elapsed": round(time.time() - t0, 1)}
     except Exception as exc:
         store.fail_run(conn, run_id, f"{type(exc).__name__}: {exc}")
