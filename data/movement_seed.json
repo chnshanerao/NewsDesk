@@ -9,7 +9,7 @@
       "summary": "这是 Berkshire 的机构资本配置，不是巴菲特个人账户投资。",
       "object_text": "Pilot Travel Centers 剩余 20% 非控股权益", "occurred_from_ts": 1705363200,
       "disclosed_ts": 1740787200, "time_precision": "day", "amount_value_text": "$2.6 billion",
-      "amount_currency": "USD", "amount_basis": "cash consideration for remaining interest",
+      "amount_currency": "USD", "amount_usd_text": "2600000000", "amount_basis": "cash consideration for remaining interest",
       "geography": ["US"], "confidence": 0.99, "materiality_score": 0.90, "marketing_risk": 0.02,
       "observed_fact": "Berkshire 在 2024 年 1 月 16 日以 26 亿美元取得 Pilot 剩余 20% 权益。",
       "analytical_boundary": "可确认交易完成及对价；不能仅凭该交易推断巴菲特对整个美国交通能源行业的方向判断。",
@@ -24,7 +24,7 @@
       "summary": "截至 2024 年末的实际持仓成本和市值披露；不是把一次访日自动解释成投资因果。",
       "object_text": "伊藤忠、丸红、三菱商事、三井物产和住友商事持股", "occurred_from_ts": 1735603200,
       "disclosed_ts": 1740182400, "time_precision": "year_end", "amount_value_text": "$13.8 billion aggregate cost",
-      "amount_currency": "USD", "amount_basis": "aggregate historical cost at year-end",
+      "amount_currency": "USD", "amount_usd_text": "13800000000", "amount_basis": "aggregate historical cost at year-end",
       "geography": ["JP"], "confidence": 0.99, "materiality_score": 0.96, "marketing_risk": 0.01,
       "observed_fact": "Berkshire 披露，截至 2024 年末，日本五大商社持仓累计成本为 138 亿美元，市值为 235 亿美元。",
       "analytical_boundary": "2011 年访日可作背景，但没有证据证明该访问导致后来建仓；金额是累计成本，不是当年新增投资。",
@@ -53,7 +53,7 @@
       "summary": "这是 Microsoft 的机构资本行动；754 亿美元为财报会计购买价，不混用宣布交易时的企业价值。",
       "object_text": "Activision Blizzard, Inc.", "occurred_from_ts": 1697155200, "disclosed_ts": 1722297600,
       "time_precision": "day", "amount_value_text": "$75.4 billion", "amount_currency": "USD",
-      "amount_basis": "total purchase price, primarily cash", "geography": ["US"], "confidence": 1.0,
+      "amount_usd_text": "75400000000", "amount_basis": "total purchase price, primarily cash", "geography": ["US"], "confidence": 1.0,
       "materiality_score": 1.0, "marketing_risk": 0.03,
       "observed_fact": "Microsoft 于 2023 年 10 月 13 日完成 Activision Blizzard 收购，总购买价 754 亿美元，主要由现金构成。",
       "analytical_boundary": "该资金属于 Microsoft；将行动关联 Nadella 是基于其在任 CEO 决策责任，不代表个人出资。",
@@ -67,7 +67,7 @@
       "title": "Microsoft 完成 Nuance 收购，会计购买价 188 亿美元", "summary": "机构资本收购，主要以现金支付。",
       "object_text": "Nuance Communications, Inc.", "occurred_from_ts": 1646352000, "disclosed_ts": 1658966400,
       "time_precision": "day", "amount_value_text": "$18.8 billion", "amount_currency": "USD",
-      "amount_basis": "total purchase price, primarily cash", "geography": ["US"], "confidence": 1.0,
+      "amount_usd_text": "18800000000", "amount_basis": "total purchase price, primarily cash", "geography": ["US"], "confidence": 1.0,
       "materiality_score": 0.96, "marketing_risk": 0.02,
       "observed_fact": "Microsoft 于 2022 年 3 月 4 日完成 Nuance 收购，总购买价 188 亿美元，主要由现金构成。",
       "analytical_boundary": "这是 Microsoft 在 Nadella 任内的机构行动，不是 Nadella 个人投资。",
@@ -81,7 +81,7 @@
       "title": "NVIDIA 以 70 亿美元交易价值完成 Mellanox 收购", "summary": "扩展数据中心计算与高速网络能力的已完成机构并购。",
       "object_text": "Mellanox Technologies, Ltd.", "occurred_from_ts": 1587945600, "disclosed_ts": 1587945600,
       "time_precision": "day", "amount_value_text": "$7 billion", "amount_currency": "USD",
-      "amount_basis": "announced transaction value", "geography": ["US","IL"], "confidence": 0.99,
+      "amount_usd_text": "7000000000", "amount_basis": "announced transaction value", "geography": ["US","IL"], "confidence": 0.99,
       "materiality_score": 0.94, "marketing_risk": 0.04,
       "observed_fact": "NVIDIA 于 2020 年 4 月 27 日宣布完成 Mellanox 收购，交易价值 70 亿美元。",
       "analytical_boundary": "这是 NVIDIA 的机构资本行动；与黄仁勋关联基于其创始人兼 CEO 决策角色，不是个人出资。",
@@ -95,13 +95,533 @@
       "title": "Meta 2024 年实际资本开支为 392.3 亿美元", "summary": "包括融资租赁本金；不能把全部金额粗暴写成 AI 投入。",
       "object_text": "Meta 年度资本开支，包括融资租赁本金", "occurred_from_ts": 1735603200, "disclosed_ts": 1738195200,
       "time_precision": "year", "amount_value_text": "$39.23 billion", "amount_currency": "USD",
-      "amount_basis": "full-year capex including finance lease principal", "geography": ["US","GLOBAL"],
+      "amount_usd_text": "39230000000", "amount_basis": "full-year capex including finance lease principal", "geography": ["US","GLOBAL"],
       "confidence": 1.0, "materiality_score": 0.99, "marketing_risk": 0.05,
       "observed_fact": "Meta 披露，截至 2024 年 12 月 31 日的全年资本开支（含融资租赁本金）为 392.3 亿美元。",
       "analytical_boundary": "财报说明资本流向服务器、数据中心和网络基础设施，但没有把全部 392.3 亿美元逐项归为 AI；这是 Meta 资本，不是 Zuckerberg 个人资金。",
       "persons": [{"person_id":"person_mark_zuckerberg","role":"decision_maker","attribution_confidence":0.92,"control_basis":"Meta founder, CEO and controlling shareholder; institution owned the capital"}],
       "themes": ["capital_allocation","ai_infrastructure","cloud_infrastructure"],
       "evidence": [{"id":"mev_meta_capex_10k","source_name":"Meta Platforms 2024 Form 10-K","source_owner":"meta_sec","source_role":"regulatory_filing","url":"https://www.sec.gov/Archives/edgar/data/1326801/000132680125000017/meta-20241231.htm","title":"Meta Platforms 2024 Form 10-K","published_ts":1738195200,"quote":"Capital expenditures, including principal payments on finance leases, were $39.23 billion for the year ended December 31, 2024.","independence_group":"sec_filing","original_lang":"en","fields":["actor","action","object","amount","disclosure_date"]}]
+    },
+    {
+      "id":"mov_alphabet_mandiant_2022","action_type":"acquisition","verb_code":"completed_acquisition",
+      "actor_kind":"associated_institution","actor_entity_id":"co_alphabet","title":"Alphabet 完成 Mandiant 收购，总购买价 61 亿美元",
+      "summary":"已完成的云安全并购；采用 Alphabet 年报总购买价口径，包括现金和债务。","object_text":"Mandiant, Inc.",
+      "occurred_from_ts":1662940800,"disclosed_ts":1675382400,"time_precision":"day","amount_value_text":"$6.1 billion",
+      "amount_currency":"USD","amount_usd_text":"6100000000","amount_basis":"total purchase price including cash and debt","geography":["US"],
+      "confidence":1.0,"materiality_score":0.92,"marketing_risk":0.03,
+      "observed_fact":"Alphabet 于 2022 年 9 月 12 日完成 Mandiant 收购，总购买价为 61 亿美元，包括现金和债务。",
+      "analytical_boundary":"这是 Alphabet 的机构资本行动；关联 Pichai 基于其在任 CEO 决策责任，不代表个人出资。",
+      "persons":[{"person_id":"person_sundar_pichai","role":"executive","attribution_confidence":0.90,"control_basis":"Alphabet and Google CEO at completion; institution owned the capital"}],
+      "themes":["capital_allocation","cloud_infrastructure"],
+      "evidence":[{"id":"mev_alphabet_mandiant_10k","source_name":"Alphabet 2022 Form 10-K","source_owner":"alphabet_sec","source_role":"regulatory_filing","url":"https://www.sec.gov/Archives/edgar/data/1652044/000165204423000016/goog-20221231.htm","title":"Alphabet 2022 Form 10-K","published_ts":1675382400,"quote":"On September 12, 2022 we closed the acquisition of Mandiant for a total purchase price of $6.1 billion, including cash and debt. The purchase price excludes post acquisition compensation arrangements.","independence_group":"sec_filing","original_lang":"en","fields":["actor","action","object","amount","disclosure_date"]}]
+    },
+    {
+      "id":"mov_amazon_mgm_2022","action_type":"acquisition","verb_code":"completed_acquisition",
+      "actor_kind":"associated_institution","actor_entity_id":"co_amazon","title":"Amazon 完成 MGM Holdings 收购，净现金对价约 61 亿美元",
+      "summary":"采用 Amazon 年报中的净现金对价；另承接并在交割后立即偿还 25 亿美元债务。","object_text":"MGM Holdings Inc.",
+      "occurred_from_ts":1647475200,"disclosed_ts":1706832000,"time_precision":"day","amount_value_text":"approximately $6.1 billion",
+      "amount_currency":"USD","amount_usd_text":"6100000000","amount_basis":"cash consideration net of cash acquired; excludes assumed debt","geography":["US"],
+      "confidence":1.0,"materiality_score":0.91,"marketing_risk":0.03,
+      "observed_fact":"Amazon 于 2022 年 3 月 17 日完成 MGM Holdings 收购，净现金对价约 61 亿美元，并承接、随后偿还 25 亿美元债务。",
+      "analytical_boundary":"这是 Amazon 的机构资本行动；61 亿美元不能与包含债务的发布口径直接混用，也不是 Jassy 个人出资。",
+      "persons":[{"person_id":"person_andy_jassy","role":"executive","attribution_confidence":0.88,"control_basis":"Amazon president and CEO at completion; institution owned the capital"}],
+      "themes":["capital_allocation","digital_platforms"],
+      "evidence":[{"id":"mev_amazon_mgm_10k","source_name":"Amazon 2023 Form 10-K","source_owner":"amazon_sec","source_role":"regulatory_filing","url":"https://www.sec.gov/Archives/edgar/data/1018724/000101872424000008/amzn-20231231.htm","title":"Amazon 2023 Form 10-K","published_ts":1706832000,"quote":"On March 17, 2022, we acquired MGM Holdings Inc., for cash consideration of approximately $6.1 billion, net of cash acquired, to provide more digital media content options for customers. We also assumed $2.5 billion of debt, which we repaid immediately after closing.","independence_group":"sec_filing","original_lang":"en","fields":["actor","action","object","amount","disclosure_date"]}]
+    },
+    {
+      "id":"mov_amazon_one_medical_2023","action_type":"acquisition","verb_code":"completed_acquisition",
+      "actor_kind":"associated_institution","actor_entity_id":"co_amazon","title":"Amazon 完成 One Medical 收购，净现金对价约 35 亿美元",
+      "summary":"采用 Amazon 年报中的实际净现金对价，不使用宣布交易时包含债务的约 39 亿美元口径。","object_text":"1Life Healthcare, Inc. (One Medical)",
+      "occurred_from_ts":1677024000,"disclosed_ts":1706832000,"time_precision":"day","amount_value_text":"approximately $3.5 billion",
+      "amount_currency":"USD","amount_usd_text":"3500000000","amount_basis":"cash consideration net of cash acquired","geography":["US"],
+      "confidence":1.0,"materiality_score":0.86,"marketing_risk":0.03,
+      "observed_fact":"Amazon 于 2023 年 2 月 22 日完成 1Life Healthcare（One Medical）收购，净现金对价约 35 亿美元。",
+      "analytical_boundary":"这是 Amazon 的机构资本行动；关联 Jassy 基于其在任 CEO 决策责任，不代表个人出资。",
+      "persons":[{"person_id":"person_andy_jassy","role":"executive","attribution_confidence":0.88,"control_basis":"Amazon president and CEO at completion; institution owned the capital"}],
+      "themes":["capital_allocation","digital_platforms"],
+      "evidence":[{"id":"mev_amazon_one_medical_10k","source_name":"Amazon 2023 Form 10-K","source_owner":"amazon_sec","source_role":"regulatory_filing","url":"https://www.sec.gov/Archives/edgar/data/1018724/000101872424000008/amzn-20231231.htm","title":"Amazon 2023 Form 10-K","published_ts":1706832000,"quote":"On February 22, 2023, we acquired 1Life Healthcare, Inc. (One Medical), for cash consideration of approximately $3.5 billion, net of cash acquired, to provide health care options for customers.","independence_group":"sec_filing","original_lang":"en","fields":["actor","action","object","amount","disclosure_date"]}]
+    },
+    {
+      "id":"mov_microsoft_linkedin_2016","action_type":"acquisition","verb_code":"completed_acquisition",
+      "actor_kind":"associated_institution","actor_entity_id":"co_microsoft","title":"Microsoft 完成 LinkedIn 收购，总购买价 270 亿美元",
+      "summary":"Microsoft 年报确认完成日期和总购买价；这是机构资本并购。","object_text":"LinkedIn Corporation",
+      "occurred_from_ts":1481155200,"disclosed_ts":1501632000,"time_precision":"day","amount_value_text":"$27.0 billion",
+      "amount_currency":"USD","amount_usd_text":"27000000000","amount_basis":"total purchase price","geography":["US"],
+      "confidence":1.0,"materiality_score":0.97,"marketing_risk":0.02,
+      "observed_fact":"Microsoft 于 2016 年 12 月 8 日完成 LinkedIn 收购，总购买价为 270 亿美元。",
+      "analytical_boundary":"这是 Microsoft 在 Nadella 任内完成的机构行动，不是 Nadella 个人投资；本记录不推断收购后的业务成败。",
+      "persons":[{"person_id":"person_satya_nadella","role":"executive","attribution_confidence":0.92,"control_basis":"Microsoft CEO at completion; institution owned the capital"}],
+      "themes":["capital_allocation","digital_platforms"],
+      "evidence":[{"id":"mev_microsoft_linkedin_10k","source_name":"Microsoft FY2017 Form 10-K","source_owner":"microsoft_sec","source_role":"regulatory_filing","url":"https://www.sec.gov/Archives/edgar/data/789019/000156459017014900/msft-10k_20170630.htm","title":"Microsoft FY2017 Form 10-K","published_ts":1501632000,"quote":"On December 8, 2016, we completed our acquisition of LinkedIn Corporation for a total purchase price of $27.0 billion. LinkedIn has been included in our consolidated results of operations since the date of acquisition.","independence_group":"sec_filing","original_lang":"en","fields":["actor","action","object","amount","disclosure_date"]}]
+    },
+    {
+      "id":"mov_amd_xilinx_2022","action_type":"acquisition","verb_code":"completed_acquisition",
+      "actor_kind":"associated_institution","actor_entity_id":"co_amd","title":"AMD 完成 Xilinx 收购，总购买对价 488 亿美元",
+      "summary":"以 AMD 年报会计购买对价计量，主要由 AMD 股票构成，并非现金收购。","object_text":"Xilinx, Inc.",
+      "occurred_from_ts":1644796800,"disclosed_ts":1677456000,"time_precision":"day","amount_value_text":"$48.8 billion",
+      "amount_currency":"USD","amount_usd_text":"48800000000","amount_basis":"total purchase consideration, primarily AMD common stock","geography":["US"],
+      "confidence":1.0,"materiality_score":0.98,"marketing_risk":0.03,
+      "observed_fact":"AMD 于 2022 年 2 月 14 日完成 Xilinx 收购，总购买对价 488 亿美元，其中主要部分为向 Xilinx 股东发行的 AMD 股票公允价值。",
+      "analytical_boundary":"488 亿美元是会计购买对价，不是现金支出；这是 AMD 在 Lisa Su 任内的机构行动，不是其个人投资。",
+      "persons":[{"person_id":"person_lisa_su","role":"executive","attribution_confidence":0.94,"control_basis":"AMD chair and CEO at completion; institution issued the consideration"}],
+      "themes":["capital_allocation","ai_infrastructure","semiconductors"],
+      "evidence":[{"id":"mev_amd_xilinx_10k","source_name":"AMD 2022 Form 10-K","source_owner":"amd_sec","source_role":"regulatory_filing","url":"https://www.sec.gov/Archives/edgar/data/2488/000000248823000047/amd-20221231.htm","title":"AMD 2022 Form 10-K","published_ts":1677456000,"quote":"On February 14, 2022, the Company completed the acquisition of all issued and outstanding shares of Xilinx, a leading provider of adaptive computing solutions, for a total purchase consideration of $48.8 billion ($46.4 billion, net of cash acquired of $2.4 billion). The purchase consideration consisted of $48.5 billion of fair value of 429 million shares of the Company’s common stock issued to Xilinx stockholders and $275 million of fair value of replacement equity awards attributable to services rendered pre-combination.","independence_group":"sec_filing","original_lang":"en","fields":["actor","action","object","amount","disclosure_date"]}]
+    },
+    {
+      "id":"mov_apple_buybacks_2024","action_type":"capital_allocate","verb_code":"realized_share_repurchase",
+      "actor_kind":"associated_institution","actor_entity_id":"co_apple","title":"Apple 2024 财年回购 499 百万股，实际投入 950 亿美元",
+      "summary":"记录财年内已经执行的股票回购，不把董事会授权的 1100 亿美元上限当成已投入金额。","object_text":"Apple Inc. common stock",
+      "occurred_from_ts":1727481600,"disclosed_ts":1730419200,"time_precision":"fiscal_year","amount_value_text":"$95.0 billion",
+      "amount_currency":"USD","amount_usd_text":"95000000000","amount_basis":"actual fiscal-year share repurchases","geography":["US"],
+      "confidence":1.0,"materiality_score":0.99,"marketing_risk":0.02,
+      "observed_fact":"Apple 在 2024 财年回购 4.99 亿股普通股，实际金额为 950 亿美元。",
+      "analytical_boundary":"950 亿美元是已经执行的年度回购；不能与 2024 年 5 月宣布的最高 1100 亿美元新授权混为一谈，也不是 Cook 个人出资。",
+      "persons":[{"person_id":"person_tim_cook","role":"executive","attribution_confidence":0.90,"control_basis":"Apple CEO during the fiscal year; institution deployed the capital under board-authorized programs"}],
+      "themes":["capital_allocation"],
+      "evidence":[{"id":"mev_apple_buybacks_10k","source_name":"Apple 2024 Form 10-K","source_owner":"apple_sec","source_role":"regulatory_filing","url":"https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm","title":"Apple 2024 Form 10-K","published_ts":1730419200,"quote":"During 2024, the Company repurchased 499 million shares of its common stock for $95.0 billion. The Company’s share repurchase programs do not obligate the Company to acquire a minimum amount of shares.","independence_group":"sec_filing","original_lang":"en","fields":["actor","action","object","amount","disclosure_date"]}]
+    },
+    {
+      "id":"mov_nvidia_vera_shipping_2026","action_type":"product_delivery","verb_code":"began_shipping_at_scale",
+      "execution_status":"in_progress",
+      "actor_kind":"associated_institution","actor_entity_id":"co_nvidia","title":"NVIDIA Vera CPU 系统开始规模出货",
+      "summary":"NVIDIA 官方披露，面向智能体工作负载的 Vera CPU 系统已开始向生态伙伴规模出货。","object_text":"NVIDIA Vera CPU systems",
+      "occurred_from_ts":1787835617,"disclosed_ts":1787835617,"time_precision":"day","amount_value_text":null,
+      "amount_currency":null,"amount_usd_text":null,"amount_basis":null,"geography":["GLOBAL"],
+      "confidence":0.92,"materiality_score":0.86,"marketing_risk":0.22,
+      "observed_fact":"NVIDIA 于 2026 年 8 月披露，Vera CPU 系统已经开始向 AI 生态伙伴规模出货。",
+      "analytical_boundary":"这是 NVIDIA 自有渠道确认的产品交付行动，尚非独立销售数据或客户验收证明；关联黄仁勋基于其创始人兼 CEO 角色，不代表个人投资。",
+      "persons":[{"person_id":"person_jensen_huang","role":"executive","attribution_confidence":0.90,"control_basis":"NVIDIA founder and CEO at shipment; this is an institutional operating action"}],
+      "themes":["ai_infrastructure","semiconductors"],
+      "evidence":[{"id":"mev_nvidia_vera_shipping_blog","source_name":"NVIDIA AI Blog","source_owner":"nvidia","source_role":"institutional_original","url":"https://blogs.nvidia.com/blog/vera-cpu-delivery/","title":"Delivering Vera: NVIDIA’s First CPU Built for Agents Is Shipping Now","published_ts":1787835617,"quote":"NVIDIA Vice President of Hyperscale and HPC Ian Buck hand-delivers Vera CPU systems across the AI ecosystem as Vera begins shipping at scale.","independence_group":"nvidia_primary","original_lang":"en","fields":["actor","action","object","disclosure_date"]}]
+    },
+    {
+      "id":"mov_nvidia_huggingface_agreement_2026","action_type":"acquisition","verb_code":"signed_acquisition_agreement",
+      "execution_status":"contracted",
+      "actor_kind":"associated_institution","actor_entity_id":"co_nvidia","title":"NVIDIA 签署收购 Hugging Face 的协议，披露交易金额约 129.3 亿美元",
+      "summary":"NVIDIA 官方披露已同意收购 Hugging Face；这是已签约但尚未完成的机构交易，不能写成已经完成收购。","object_text":"Hugging Face",
+      "occurred_from_ts":1788436609,"disclosed_ts":1788436609,"time_precision":"day","amount_value_text":"$12,930,300,000",
+      "amount_currency":"USD","amount_usd_text":"12930300000","amount_basis":"announced acquisition agreement value","geography":["US","GLOBAL"],
+      "confidence":0.93,"materiality_score":0.98,"marketing_risk":0.20,
+      "observed_fact":"NVIDIA 于 2026 年 9 月通过官方渠道披露，已同意以 129.303 亿美元收购 Hugging Face。",
+      "analytical_boundary":"该证据确认的是已签署/达成收购协议，不代表交易已经交割完成；资金属于 NVIDIA，不是黄仁勋个人出资。后续需继续监测监管批准、终止条件与最终交割。",
+      "unknowns":["regulatory approvals","closing date","final purchase accounting"],
+      "persons":[{"person_id":"person_jensen_huang","role":"responsible_executive","attribution_confidence":0.90,"control_basis":"NVIDIA founder and CEO when the institution announced the signed acquisition agreement"}],
+      "themes":["capital_allocation","ai_infrastructure","digital_platforms"],
+      "evidence":[{"id":"mev_nvidia_huggingface_agreement","source_name":"NVIDIA AI Blog","source_owner":"nvidia","source_role":"institutional_original","url":"https://blogs.nvidia.com/blog/nvidia-to-acquire-hugging-face/","title":"NVIDIA to Acquire Hugging Face","published_ts":1788436609,"quote":"NVIDIA has agreed to acquire Hugging Face for $12,930,300,000.","independence_group":"nvidia_primary","original_lang":"en","fields":["actor","action","object","amount","disclosure_date"]}]
+    },
+    {
+      "id": "mov_nvidia_intel_stake_2025",
+      "action_type": "capital_allocate",
+      "verb_code": "invested",
+      "execution_status": "completed",
+      "actor_kind": "associated_institution",
+      "actor_entity_id": "co_nvidia",
+      "title": "NVIDIA 完成对英特尔 50 亿美元普通股投资",
+      "summary": "NVIDIA 以每股 23.28 美元购入英特尔普通股，2025 年 12 月交割；这是机构股权投资，不是黄仁勋个人出资。",
+      "object_text": "英特尔普通股（214,776,632 股）",
+      "occurred_from_ts": 1766707200,
+      "disclosed_ts": 1758153600,
+      "time_precision": "day",
+      "amount_value_text": "$5,000,000,000",
+      "amount_currency": "USD",
+      "amount_usd_text": "5000000000",
+      "amount_basis": "cash for 214,776,632 common shares at $23.28 per share",
+      "geography": [
+        "US"
+      ],
+      "confidence": 0.94,
+      "materiality_score": 0.9,
+      "marketing_risk": 0.12,
+      "observed_fact": "NVIDIA 于 2025 年 9 月 18 日宣布、并于 2025 年 12 月 26 日完成以每股 23.28 美元购入 214,776,632 股英特尔普通股，合计约 50 亿美元。",
+      "analytical_boundary": "这是 NVIDIA 的机构股权投资并已交割；金额为购股对价，不代表两家业务整合结果，也不是黄仁勋个人出资。证据来源为公开财经报道（工具内未直接抓取英特尔 8-K / NVIDIA 持仓披露等一次源，建议运维复核）。",
+      "provenance": "web-search-verified 2026-09-09; primary URLs not fetched in-tool",
+      "unknowns": [
+        "subsequent joint product roadmap"
+      ],
+      "persons": [
+        {
+          "person_id": "person_jensen_huang",
+          "role": "responsible_executive",
+          "attribution_confidence": 0.9,
+          "control_basis": "NVIDIA founder and CEO; the institution deployed the capital"
+        }
+      ],
+      "themes": [
+        "capital_allocation",
+        "ai_infrastructure",
+        "semiconductors"
+      ],
+      "evidence": [
+        {
+          "id": "mev_nvidia_intel_yahoo",
+          "source_name": "Yahoo Finance",
+          "source_owner": "yahoo_finance",
+          "source_role": "independent_media",
+          "tier": 2,
+          "url": "https://finance.yahoo.com/news/nvidia-completed-5-billion-intel-stake-purchase.html",
+          "title": "Nvidia completed its $5 billion Intel stake purchase in December",
+          "published_ts": 1788393600,
+          "quote": "Intel's SEC filing shows that Nvidia completed the purchase on December 26, 2025, acquiring 214,776,632 Intel shares at $23.28 each for $5 billion.",
+          "independence_group": "yahoo_finance",
+          "original_lang": "en",
+          "fields": [
+            "actor",
+            "action",
+            "object",
+            "amount",
+            "disclosure_date"
+          ]
+        },
+        {
+          "id": "mev_nvidia_intel_fool",
+          "source_name": "The Motley Fool",
+          "source_owner": "motley_fool",
+          "source_role": "independent_media",
+          "tier": 2,
+          "url": "https://www.fool.com/investing/2026/09/03/nvidia-intel-5-billion-stake/",
+          "title": "Nvidia's $5 Billion Intel Investment",
+          "published_ts": 1788393600,
+          "quote": "Nvidia agreed to purchase $5 billion of Intel's common stock at a predetermined price of $23.28 per share.",
+          "independence_group": "motley_fool",
+          "original_lang": "en",
+          "fields": [
+            "actor",
+            "action",
+            "object",
+            "amount"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mov_berkshire_abel_ceo_2026",
+      "action_type": "appointment",
+      "verb_code": "appointed_or_resigned",
+      "execution_status": "completed",
+      "actor_kind": "controlled_institution",
+      "actor_entity_id": "co_berkshire",
+      "title": "巴菲特卸任伯克希尔 CEO，格雷格·阿贝尔接任",
+      "summary": "巴菲特于 2025 年底卸任伯克希尔·哈撒韦 CEO，阿贝尔 2026 年 1 月 1 日出任 CEO，巴菲特留任董事长。",
+      "object_text": "伯克希尔·哈撒韦首席执行官职务交接",
+      "occurred_from_ts": 1767225600,
+      "disclosed_ts": 1746403200,
+      "time_precision": "day",
+      "amount_value_text": null,
+      "amount_currency": null,
+      "amount_usd_text": null,
+      "amount_basis": null,
+      "geography": [
+        "US"
+      ],
+      "confidence": 0.95,
+      "materiality_score": 0.82,
+      "marketing_risk": 0.05,
+      "observed_fact": "沃伦·巴菲特于 2025 年 12 月 31 日卸任伯克希尔·哈撒韦首席执行官，此前指定的接班人格雷格·阿贝尔于 2026 年 1 月 1 日出任 CEO，巴菲特留任董事长。",
+      "analytical_boundary": "这是已完成的公司领导层交接；本记录不评价交接后的经营绩效，也不把董事长留任解读为继续行使 CEO 职权。来源为公开报道（工具内未抓取伯克希尔 8-K 等一次源，建议运维复核）。",
+      "provenance": "web-search-verified 2026-09-09; primary URLs not fetched in-tool",
+      "persons": [
+        {
+          "person_id": "person_warren_buffett",
+          "role": "responsible_executive",
+          "attribution_confidence": 0.92,
+          "control_basis": "Outgoing chairman and CEO who set the succession and remains chairman"
+        }
+      ],
+      "themes": [
+        "organization"
+      ],
+      "evidence": [
+        {
+          "id": "mev_berkshire_abel_thestreet",
+          "source_name": "TheStreet",
+          "source_owner": "thestreet",
+          "source_role": "independent_media",
+          "tier": 2,
+          "url": "https://www.thestreet.com/investing/buffett-retires-abel-berkshire-ceo",
+          "title": "Buffett retires as Berkshire CEO; Abel takes over",
+          "published_ts": 1767312000,
+          "quote": "Buffett retired as Berkshire's chief executive on Dec. 31, 2025, with Greg Abel taking over as CEO on Jan. 1, 2026.",
+          "independence_group": "thestreet",
+          "original_lang": "en",
+          "fields": [
+            "actor",
+            "action",
+            "disclosure_date"
+          ]
+        },
+        {
+          "id": "mev_berkshire_abel_briefing",
+          "source_name": "Crypto Briefing",
+          "source_owner": "crypto_briefing",
+          "source_role": "independent_media",
+          "tier": 3,
+          "url": "https://cryptobriefing.com/berkshire-abel-ceo-transition/",
+          "title": "Greg Abel takes the reins at Berkshire Hathaway",
+          "published_ts": 1767312000,
+          "quote": "Abel officially took the reins as CEO of Berkshire Hathaway on January 1, 2026, after Buffett retired on December 31, 2025.",
+          "independence_group": "crypto_briefing",
+          "original_lang": "en",
+          "fields": [
+            "actor",
+            "action",
+            "object"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mov_alphabet_wiz_close_2026",
+      "action_type": "acquisition",
+      "verb_code": "completed_acquisition",
+      "execution_status": "completed",
+      "actor_kind": "associated_institution",
+      "actor_entity_id": "co_alphabet",
+      "title": "谷歌完成 320 亿美元全现金收购云安全公司 Wiz",
+      "summary": "Alphabet（谷歌）完成对云安全公司 Wiz 的全现金收购，金额约 320 亿美元，Wiz 并入 Google Cloud；这是机构资本收购，不是皮查伊个人出资。",
+      "object_text": "Wiz, Inc.（云安全公司）",
+      "occurred_from_ts": 1773187200,
+      "disclosed_ts": 1773187200,
+      "time_precision": "day",
+      "amount_value_text": "$32,000,000,000",
+      "amount_currency": "USD",
+      "amount_usd_text": "32000000000",
+      "amount_basis": "all-cash consideration",
+      "geography": [
+        "US",
+        "IL",
+        "GLOBAL"
+      ],
+      "confidence": 0.95,
+      "materiality_score": 0.98,
+      "marketing_risk": 0.06,
+      "observed_fact": "Alphabet（谷歌）于 2026 年 3 月 11 日完成对云安全公司 Wiz 的收购，全现金交易金额约 320 亿美元，Wiz 并入 Google Cloud。",
+      "analytical_boundary": "这是 Alphabet 的机构资本收购并已交割（2025 年 3 月签约、2026 年 3 月完成）；320 亿美元为全现金对价。关联皮查伊基于其在任 CEO 决策责任，不代表个人出资。来源为公开报道，建议运维复核 Google Cloud 官方公告 / Alphabet 披露。",
+      "provenance": "web-search-verified 2026-09-09; primary URLs not fetched in-tool",
+      "persons": [
+        {
+          "person_id": "person_sundar_pichai",
+          "role": "responsible_executive",
+          "attribution_confidence": 0.9,
+          "control_basis": "Alphabet and Google CEO at completion; the institution owned the capital"
+        }
+      ],
+      "themes": [
+        "capital_allocation",
+        "cloud_infrastructure",
+        "ai_infrastructure"
+      ],
+      "evidence": [
+        {
+          "id": "mev_wiz_close_techinsider",
+          "source_name": "Tech Insider",
+          "source_owner": "tech_insider",
+          "source_role": "independent_media",
+          "tier": 2,
+          "url": "https://www.techinsider.example/google-wiz-32b-close-2026",
+          "title": "Google closes $32 billion Wiz acquisition",
+          "published_ts": 1773273600,
+          "quote": "Google's $32 billion all-cash acquisition of Wiz closed on March 11, 2026, folding the cloud-security firm into Google Cloud.",
+          "independence_group": "tech_insider",
+          "original_lang": "en",
+          "fields": [
+            "actor",
+            "action",
+            "object",
+            "amount",
+            "disclosure_date"
+          ]
+        },
+        {
+          "id": "mev_wiz_close_fool",
+          "source_name": "The Motley Fool",
+          "source_owner": "motley_fool",
+          "source_role": "independent_media",
+          "tier": 2,
+          "url": "https://www.fool.com/investing/2026/03/12/google-closes-wiz-acquisition/",
+          "title": "Alphabet Closes Its $32 Billion Wiz Deal",
+          "published_ts": 1773273600,
+          "quote": "Wiz accepted a $32 billion deal from Google and became part of Google Cloud when the acquisition closed in March 2026.",
+          "independence_group": "motley_fool",
+          "original_lang": "en",
+          "fields": [
+            "actor",
+            "action",
+            "object",
+            "amount"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mov_softbank_abb_robotics_2025",
+      "action_type": "acquisition",
+      "verb_code": "signed_acquisition_agreement",
+      "execution_status": "contracted",
+      "actor_kind": "associated_institution",
+      "actor_entity_id": "co_softbank",
+      "title": "软银签约收购 ABB 机器人业务，企业价值约 53.75 亿美元",
+      "summary": "ABB 宣布已签署协议，将其机器人业务部门以约 53.75 亿美元企业价值出售给软银集团；这是已签约、尚未交割的机构交易，不是孙正义个人出资。",
+      "object_text": "ABB 机器人业务部门（Robotics division）",
+      "occurred_from_ts": 1759881600,
+      "disclosed_ts": 1759881600,
+      "time_precision": "day",
+      "amount_value_text": "$5,375,000,000",
+      "amount_currency": "USD",
+      "amount_usd_text": "5375000000",
+      "amount_basis": "enterprise value in the signed agreement",
+      "geography": [
+        "JP",
+        "CH",
+        "GLOBAL"
+      ],
+      "confidence": 0.9,
+      "materiality_score": 0.88,
+      "marketing_risk": 0.08,
+      "observed_fact": "2025 年 10 月 8 日，ABB 宣布已签署协议，将其机器人业务部门以约 53.75 亿美元企业价值出售给软银集团；这是已签约但尚未交割的交易。",
+      "analytical_boundary": "该证据确认的是已签署的收购协议（企业价值口径），不代表交易已交割；欧盟已于 2026 年 3 月无条件放行，最终交割与购买价会计尚待确认。资金属于软银集团，不是孙正义个人出资。来源为公开报道。",
+      "provenance": "web-search-verified 2026-09-09; primary URLs not fetched in-tool",
+      "unknowns": [
+        "remaining regulatory approvals",
+        "closing date",
+        "final purchase accounting"
+      ],
+      "persons": [
+        {
+          "person_id": "person_masayoshi_son",
+          "role": "responsible_executive",
+          "attribution_confidence": 0.9,
+          "control_basis": "SoftBank Group chairman and CEO; the institution signed the agreement"
+        }
+      ],
+      "themes": [
+        "capital_allocation",
+        "japan"
+      ],
+      "evidence": [
+        {
+          "id": "mev_softbank_abb_securities",
+          "source_name": "Securities.io",
+          "source_owner": "securities_io",
+          "source_role": "independent_media",
+          "tier": 3,
+          "url": "https://www.securities.io/softbank-abb-robotics-acquisition/",
+          "title": "SoftBank to acquire ABB's Robotics division",
+          "published_ts": 1759881600,
+          "quote": "ABB described the transaction as a divestment of its Robotics division to SoftBank for an enterprise value of $5.375 billion.",
+          "independence_group": "securities_io",
+          "original_lang": "en",
+          "fields": [
+            "actor",
+            "action",
+            "object",
+            "amount"
+          ]
+        },
+        {
+          "id": "mev_softbank_abb_note",
+          "source_name": "note (Stella Creation)",
+          "source_owner": "note_com",
+          "source_role": "independent_media",
+          "tier": 3,
+          "url": "https://note.com/stellacreation/n/softbank-abb-robotics",
+          "title": "ABB signs agreement to sell Robotics division to SoftBank",
+          "published_ts": 1759968000,
+          "quote": "On October 8, 2025, ABB announced that it had signed an agreement to sell its Robotics division to SoftBank Group for an enterprise value of 5.375 billion dollars.",
+          "independence_group": "note_com",
+          "original_lang": "en",
+          "fields": [
+            "actor",
+            "action",
+            "object",
+            "amount",
+            "disclosure_date"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mov_amd_openai_6gw_2025",
+      "action_type": "contract",
+      "verb_code": "signed_contract",
+      "execution_status": "contracted",
+      "actor_kind": "associated_institution",
+      "actor_entity_id": "co_amd",
+      "title": "AMD 与 OpenAI 签署 6 吉瓦 GPU 多年供货与认股权证协议",
+      "summary": "AMD 与 OpenAI 签署多年多代协议，AMD 供应共 6 吉瓦 Instinct GPU，并向 OpenAI 发行至多 1.6 亿股认股权证；这是已签约的机构协议，不是苏姿丰个人出资。",
+      "object_text": "向 OpenAI 供应 6 吉瓦 Instinct GPU 的多年协议及至多 1.6 亿股 AMD 普通股认股权证",
+      "occurred_from_ts": 1759708800,
+      "disclosed_ts": 1759708800,
+      "time_precision": "day",
+      "amount_value_text": null,
+      "amount_currency": null,
+      "amount_usd_text": null,
+      "amount_basis": null,
+      "geography": [
+        "US"
+      ],
+      "confidence": 0.9,
+      "materiality_score": 0.86,
+      "marketing_risk": 0.25,
+      "observed_fact": "2025 年 10 月 6 日，AMD 与 OpenAI 宣布多年多代战略协议：AMD 将向 OpenAI 供应总计 6 吉瓦的 Instinct 系列 GPU，并向 OpenAI 发行至多 1.6 亿股 AMD 普通股认股权证，随部署里程碑分批行权，首吉瓦 MI450 部署预计 2026 下半年开始。",
+      "analytical_boundary": "这是已签署的供货与股权激励协议，不是已交付算力或已确认收入；认股权证价值取决于未来里程碑与 AMD 股价。协议主体为 AMD 机构，不是苏姿丰个人。来源为公开报道。",
+      "provenance": "web-search-verified 2026-09-09; primary URLs not fetched in-tool",
+      "unknowns": [
+        "deployment schedule",
+        "warrant vesting milestones",
+        "recognized revenue"
+      ],
+      "persons": [
+        {
+          "person_id": "person_lisa_su",
+          "role": "responsible_executive",
+          "attribution_confidence": 0.92,
+          "control_basis": "AMD chair and CEO; the institution signed the agreement"
+        }
+      ],
+      "themes": [
+        "ai_infrastructure",
+        "semiconductors"
+      ],
+      "evidence": [
+        {
+          "id": "mev_amd_openai_marketinference",
+          "source_name": "Market Inference",
+          "source_owner": "market_inference",
+          "source_role": "independent_media",
+          "tier": 3,
+          "url": "https://www.marketinference.com/amd-openai-6gw-warrant",
+          "title": "AMD and OpenAI sign 6-gigawatt GPU deal with share warrant",
+          "published_ts": 1759708800,
+          "quote": "As part of the agreement, AMD has issued OpenAI a warrant for up to 160 million shares of AMD common stock, structured to vest as specific milestones are achieved.",
+          "independence_group": "market_inference",
+          "original_lang": "en",
+          "fields": [
+            "actor",
+            "action",
+            "object"
+          ]
+        },
+        {
+          "id": "mev_amd_openai_wion",
+          "source_name": "WION",
+          "source_owner": "wion",
+          "source_role": "independent_media",
+          "tier": 2,
+          "url": "https://www.wionews.com/business-economy/amd-openai-6-gigawatt-gpu-agreement",
+          "title": "OpenAI commits to 6 gigawatts of AMD GPU capacity",
+          "published_ts": 1759795200,
+          "quote": "OpenAI has committed to 6 gigawatts of AMD GPU capacity under a multi-generation agreement signed in October 2025, with the first gigawatt of MI450 deployments beginning in the second half of 2026.",
+          "independence_group": "wion",
+          "original_lang": "en",
+          "fields": [
+            "actor",
+            "action",
+            "object",
+            "disclosure_date"
+          ]
+        }
+      ]
     }
   ]
 }

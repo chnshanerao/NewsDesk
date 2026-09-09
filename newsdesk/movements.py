@@ -13,11 +13,12 @@ from . import config
 
 ACTION_RULES = (
     ("acquisition", "completed_acquisition", re.compile(
-        r"(?:完成|完成了|交割|收购了|acquired|completed (?:the )?acquisition|closed (?:the )?(?:deal|acquisition))", re.I)),
+        r"(?:完成(?:了)?(?:对.{0,40})?收购|完成(?:了)?.{0,40}并购|交割|收购了|"
+        r"acquired|completed (?:the )?acquisition|closed (?:the )?(?:deal|acquisition))", re.I)),
     ("capital_allocate", "invested", re.compile(
         r"(?:投资(?!者|人|机构|公司|大师|顾问)(?:了|于|约|超过|至少)?|出资|注资|买入|增持|购入|invested|purchased|bought|acquired (?:a )?stake)", re.I)),
     ("capital_reduce", "sold", re.compile(
-        r"(?:出售|售出|减持|清仓|divested|sold|reduced (?:its|his|her) stake)", re.I)),
+        r"(?:出售|售出|减持|清仓|divested|sold(?![- ]out)|reduced (?:its|his|her) stake)", re.I)),
     ("build_or_expand", "built_or_expanded", re.compile(
         r"(?:建成|投产|开工建设|扩建|新增产能|opened (?:a |the )?(?:factory|plant|data center)|began construction|expanded capacity)", re.I)),
     ("contract", "signed_contract", re.compile(
@@ -119,8 +120,14 @@ def sync_themes(conn) -> None:
     conn.commit()
 
 
+def _person_terms(person: dict) -> list[str]:
+    """Names plus currently-reviewed affiliations used for institutional attribution."""
+    return [*person.get("aliases", []),
+            *[a["organization"] for a in person.get("affiliations", []) if a.get("organization")]]
+
+
 def _people_in(text: str) -> list[dict]:
-    return [p for p in catalog() if any(_contains(text, a) for a in p.get("aliases", []))]
+    return [p for p in catalog() if any(_contains(text, term) for term in _person_terms(p))]
 
 
 def _amount(text: str) -> dict:
@@ -203,7 +210,14 @@ def extract_cluster(conn, cluster_id: str, source_meta: dict[str, dict]) -> list
             for field in ("title", "summary", "body"):
                 for segment in re.split(r"[\n。！？!?;；]+", item[field] or ""):
                     segment = segment.strip()
-                    if not segment or not any(_contains(segment, a) for a in person.get("aliases", [])):
+                    named = any(_contains(segment, alias) for alias in person.get("aliases", []))
+                    affiliated = any(_contains(segment, a["organization"])
+                                     for a in person.get("affiliations", []) if a.get("organization"))
+                    official = source_meta.get(item["source_id"], {}).get("source_role") == "official"
+                    # Reporting that merely mentions a company is not enough to assign
+                    # its action to an executive. Institution-based attribution is only
+                    # generated from the institution's own reviewed source.
+                    if not segment or not (named or (official and affiliated)):
                         continue
                     action = next(((kind, verb, rule, rule.search(segment))
                                    for kind, verb, rule in ACTION_RULES if rule.search(segment)), None)
@@ -259,7 +273,7 @@ def extract_cluster(conn, cluster_id: str, source_meta: dict[str, dict]) -> list
             "occurred_from_ts,time_precision,disclosed_ts,amount_value_text,amount_currency,amount_usd_text,"
             "amount_basis,geography_json,verification_status,workflow_status,confidence,materiality_score,"
             "marketing_risk,observed_fact,analytical_boundary,unknowns_json,extraction_method,dedupe_key,"
-            "created_ts,updated_ts) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+            "created_ts,updated_ts,execution_status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(dedupe_key) DO UPDATE SET title=excluded.title,summary=excluded.summary,"
             "disclosed_ts=excluded.disclosed_ts,amount_value_text=excluded.amount_value_text,"
             "amount_currency=excluded.amount_currency,amount_usd_text=excluded.amount_usd_text,"
@@ -275,7 +289,7 @@ def extract_cluster(conn, cluster_id: str, source_meta: dict[str, dict]) -> list
              "[]", verification, "draft", fact_confidence,
              _materiality(action_type, amount["usd"]), person.get("promotional_intensity", 0),
              observed, boundary, json.dumps(["exact execution date may differ from disclosure date"], ensure_ascii=False),
-             "rules-v1", dedupe, now, now))
+             "rules-v1", dedupe, now, now, "completed"))
         conn.execute("DELETE FROM movement_persons WHERE movement_id=?", (movement_id,))
         conn.execute(
             "INSERT INTO movement_persons(movement_id,person_id,role,attribution_confidence,control_basis) "
@@ -383,7 +397,8 @@ def _event_payload(conn, row) -> dict:
 
 
 def list_events(conn, *, person=None, theme=None, action_type=None, region=None,
-                workflow="published", verification="verified", limit=50, offset=0) -> dict:
+                workflow="published", verification="verified", order="recent", after=None,
+                limit=50, offset=0) -> dict:
     sql = "SELECT DISTINCT me.* FROM movement_events me"
     joins, where, args = [], [], []
     if person:
@@ -396,13 +411,18 @@ def list_events(conn, *, person=None, theme=None, action_type=None, region=None,
         where.append("me.action_type=?"); args.append(action_type)
     if region:
         where.append("me.geography_json LIKE ?"); args.append(f'%"{region}"%')
+    if after is not None:
+        where.append("COALESCE(me.occurred_from_ts,me.disclosed_ts)>=?"); args.append(after)
     if workflow != "all":
         where.append("me.workflow_status=?"); args.append(workflow)
     if verification != "all":
         where.append("me.verification_status=?"); args.append(verification)
     query = " ".join([sql, *joins]) + (" WHERE " + " AND ".join(where) if where else "")
     total = conn.execute("SELECT COUNT(*) FROM (" + query + ")", args).fetchone()[0]
-    rows = conn.execute(query + " ORDER BY me.materiality_score DESC,me.disclosed_ts DESC LIMIT ? OFFSET ?",
+    ordering = ("me.materiality_score DESC,COALESCE(me.occurred_from_ts,me.disclosed_ts) DESC"
+                if order == "materiality" else
+                "COALESCE(me.occurred_from_ts,me.disclosed_ts) DESC,me.disclosed_ts DESC,me.materiality_score DESC")
+    rows = conn.execute(query + f" ORDER BY {ordering} LIMIT ? OFFSET ?",
                         [*args, limit, offset]).fetchall()
     return {"items": [_event_payload(conn, r) for r in rows], "total": total,
             "limit": limit, "offset": offset, "generated_at": int(time.time())}
@@ -479,22 +499,36 @@ def sync_curated(conn, entries: list[dict] | None = None) -> int:
         conn.execute(
             "INSERT INTO movement_events(id,action_type,verb_code,actor_kind,actor_entity_id,title,summary,"
             "object_text,occurred_from_ts,occurred_to_ts,time_precision,disclosed_ts,amount_value_text,"
-            "amount_currency,amount_basis,geography_json,verification_status,workflow_status,confidence,"
+            "amount_currency,amount_usd_text,amount_basis,geography_json,verification_status,workflow_status,confidence,"
             "materiality_score,marketing_risk,observed_fact,analytical_boundary,unknowns_json,"
-            "extraction_method,dedupe_key,created_ts,updated_ts) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+            "extraction_method,dedupe_key,created_ts,updated_ts,execution_status) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(id) DO NOTHING",
             (movement_id, entry["action_type"], entry["verb_code"], entry["actor_kind"],
              entry.get("actor_entity_id"), entry["title"], entry.get("summary", ""),
              entry["object_text"], entry.get("occurred_from_ts"), entry.get("occurred_to_ts"),
              entry.get("time_precision", "day"), entry["disclosed_ts"],
              entry.get("amount_value_text"), entry.get("amount_currency"),
-             entry.get("amount_basis"), json.dumps(entry.get("geography", []), ensure_ascii=False),
+             entry.get("amount_usd_text"), entry.get("amount_basis"),
+             json.dumps(entry.get("geography", []), ensure_ascii=False),
              "verified", "reviewed", entry["confidence"], entry["materiality_score"],
              entry.get("marketing_risk", 0), entry["observed_fact"], entry["analytical_boundary"],
              json.dumps(entry.get("unknowns", []), ensure_ascii=False), "human-curated-v1",
-             entry.get("dedupe_key", movement_id), now, now))
-        if conn.execute("SELECT workflow_status FROM movement_events WHERE id=?", (movement_id,)).fetchone()[0] == "published":
+             entry.get("dedupe_key", movement_id), now, now,
+             entry.get("execution_status", "completed")))
+        existing = conn.execute(
+            "SELECT workflow_status,extraction_method FROM movement_events WHERE id=?", (movement_id,)
+        ).fetchone()
+        if existing["workflow_status"] == "published":
+            # Curated seeds are immutable after publication except for additive normalized
+            # fields introduced by a later schema version. Never let machine extraction
+            # rewrite a reviewed fact or its evidence ledger.
+            if existing["extraction_method"] == "human-curated-v1" and entry.get("amount_usd_text"):
+                conn.execute(
+                    "UPDATE movement_events SET amount_usd_text=COALESCE(amount_usd_text,?),updated_ts=? "
+                    "WHERE id=?",
+                    (entry["amount_usd_text"], now, movement_id))
+                conn.commit()
             continue
         conn.execute("DELETE FROM movement_persons WHERE movement_id=?", (movement_id,))
         for actor in entry["persons"]:
@@ -534,6 +568,80 @@ def sync_curated(conn, entries: list[dict] | None = None) -> int:
                      reviewer="curated-seed", reason="Verified against cited primary records")
         imported += 1
     return imported
+
+
+def trend_summary(conn, after: int | None = None) -> dict:
+    """Aggregate only published actions; an event is counted once per theme."""
+    rows = list(conn.execute(
+        "SELECT me.id,me.title,me.action_type,me.actor_kind,me.occurred_from_ts,me.disclosed_ts,"
+        "me.amount_usd_text,mt.theme_id,t.name_zh theme_name_zh,t.kind,p.id person_id,"
+        "p.name person_name,p.name_zh person_name_zh "
+        "FROM movement_events me JOIN movement_themes mt ON mt.movement_id=me.id "
+        "JOIN movement_theme_catalog t ON t.id=mt.theme_id "
+        "JOIN movement_persons mp ON mp.movement_id=me.id JOIN persons p ON p.id=mp.person_id "
+        "WHERE me.workflow_status='published' AND me.verification_status='verified' "
+        + ("AND COALESCE(me.occurred_from_ts,me.disclosed_ts)>=?" if after is not None else ""),
+        (() if after is None else (after,))))
+    grouped = {}
+    for row in rows:
+        trend = grouped.setdefault(row["theme_id"], {
+            "id": row["theme_id"], "name": row["theme_name_zh"], "kind": row["kind"],
+            "movement_ids": set(), "people": {}, "total_usd": 0.0, "latest_ts": 0,
+            "actions": []})
+        if row["id"] not in trend["movement_ids"]:
+            trend["movement_ids"].add(row["id"])
+            trend["total_usd"] += float(row["amount_usd_text"] or 0)
+            trend["latest_ts"] = max(trend["latest_ts"], row["occurred_from_ts"] or row["disclosed_ts"] or 0)
+            trend["actions"].append({"id": row["id"], "title": row["title"],
+                                     "action_type": row["action_type"],
+                                     "ts": row["occurred_from_ts"] or row["disclosed_ts"]})
+        trend["people"][row["person_id"]] = row["person_name_zh"] or row["person_name"]
+    items = []
+    for trend in grouped.values():
+        trend["movement_count"] = len(trend.pop("movement_ids"))
+        trend["people"] = [{"id": k, "name": v} for k, v in trend["people"].items()]
+        trend["person_count"] = len(trend["people"])
+        trend["total_usd"] = str(round(trend["total_usd"], 2)) if trend["total_usd"] else None
+        trend["signal"] = ("collective" if trend["person_count"] >= 3 else
+                           "converging" if trend["person_count"] >= 2 else "single_actor")
+        trend["actions"].sort(key=lambda x: x["ts"] or 0, reverse=True)
+        items.append(trend)
+    items.sort(key=lambda x: (x["person_count"], x["movement_count"], x["latest_ts"]), reverse=True)
+    people_n = conn.execute(
+        "SELECT COUNT(DISTINCT mp.person_id) FROM movement_persons mp JOIN movement_events me "
+        "ON me.id=mp.movement_id WHERE me.workflow_status='published' AND me.verification_status='verified' "
+        + ("AND COALESCE(me.occurred_from_ts,me.disclosed_ts)>=?" if after is not None else ""),
+        (() if after is None else (after,))).fetchone()[0]
+    return {"items": items, "movement_count": len({r["id"] for r in rows}),
+            "person_count": people_n, "generated_at": int(time.time())}
+
+
+def monitor_status(conn) -> dict:
+    """Expose coverage health without leaking unpublished candidate details."""
+    now = int(time.time())
+    after = now - 365 * 86400
+    tracked = conn.execute(
+        "SELECT COUNT(*) FROM persons WHERE review_status='human_approved'").fetchone()[0]
+    recent_published = conn.execute(
+        "SELECT COUNT(*) FROM movement_events WHERE workflow_status='published' "
+        "AND verification_status='verified' AND COALESCE(occurred_from_ts,disclosed_ts)>=?",
+        (after,)).fetchone()[0]
+    recent_people = conn.execute(
+        "SELECT COUNT(DISTINCT mp.person_id) FROM movement_events me "
+        "JOIN movement_persons mp ON mp.movement_id=me.id WHERE me.workflow_status='published' "
+        "AND me.verification_status='verified' AND COALESCE(me.occurred_from_ts,me.disclosed_ts)>=?",
+        (after,)).fetchone()[0]
+    candidates = conn.execute(
+        "SELECT COUNT(*) FROM movement_events WHERE workflow_status='draft' "
+        "AND COALESCE(occurred_from_ts,disclosed_ts)>=?", (after,)).fetchone()[0]
+    latest = conn.execute(
+        "SELECT MAX(COALESCE(occurred_from_ts,disclosed_ts)) FROM movement_events "
+        "WHERE workflow_status='published' AND verification_status='verified'").fetchone()[0]
+    return {"tracked_people": tracked, "recent_published": recent_published,
+            "recent_people": recent_people, "candidates_pending_review": candidates,
+            "latest_published_action_ts": latest, "window_days": 365,
+            "coverage_status": "building" if recent_people < max(10, tracked // 2) else "healthy",
+            "generated_at": now}
 
 
 def list_people(conn) -> list[dict]:

@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>大佬动向捕获方法 — NEWSDESK 内部说明</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{
+  --bg:#0a0d12; --bg-1:#0e131a; --panel:#11171f; --panel-2:#151c26;
+  --line:#1e2732; --line-2:#2a3543;
+  --fg:#d7dee8; --fg-dim:#8a97a8; --fg-dim2:#5d6b7d;
+  --amber:#f5a623; --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --critical:#d03b3b;
+  --blue:#58a6ff; --purple:#b48ead;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,"DejaVu Sans Mono","Noto Sans Mono CJK SC",monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.55 var(--mono);-webkit-font-smoothing:antialiased}
+a{color:var(--blue);text-decoration:none} a:hover{text-decoration:underline}
+.wrap{max-width:1120px;margin:0 auto;padding:32px 24px 96px}
+.eyebrow{color:var(--fg-dim2);letter-spacing:.14em;text-transform:uppercase;font-size:11px;margin-bottom:6px}
+h1{font-size:22px;margin:0 0 6px;font-weight:600;letter-spacing:-.01em}
+h2{font-size:15px;margin:36px 0 12px;font-weight:600;color:var(--fg);border-left:2px solid var(--amber);padding-left:10px}
+h3{font-size:13px;margin:22px 0 8px;font-weight:600;color:var(--fg-dim)}
+p{margin:8px 0;color:var(--fg)}
+.subtitle{color:var(--fg-dim);font-size:12px;margin:0 0 26px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px 18px}
+.grid{display:grid;gap:14px}
+.kpi-row{grid-template-columns:repeat(4,1fr)}
+.kpi .n{font-size:28px;font-weight:600;color:var(--fg);line-height:1.1;letter-spacing:-.02em}
+.kpi .l{color:var(--fg-dim);font-size:11px;margin-top:6px}
+.kpi .h{color:var(--fg-dim2);font-size:11px;margin-top:2px}
+.kpi.warn .n{color:var(--warn)}
+.kpi.crit .n{color:var(--critical)}
+.kpi.good .n{color:var(--good)}
+.two-col{grid-template-columns:1fr 1fr}
+.tag{display:inline-block;padding:1px 7px;border-radius:3px;font-size:11px;color:var(--fg-dim);border:1px solid var(--line-2);background:var(--bg-1)}
+.tag.a{border-color:#2b3e5c;color:#89b3ea;background:#0f1927}
+.tag.b{border-color:#5c3e2b;color:#eab389;background:#271a0f}
+.tag.ok{border-color:#1e4d1e;color:#5ecb5e;background:#0a1a0a}
+.tag.bad{border-color:#5c2b2b;color:#e07070;background:#1a0a0a}
+.pipe{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.pipe .step{padding:6px 10px;border:1px solid var(--line-2);border-radius:4px;background:var(--panel-2);color:var(--fg);font-size:12px}
+.pipe .step small{display:block;color:var(--fg-dim2);font-size:10px;margin-top:1px}
+.pipe .arr{color:var(--fg-dim2)}
+.pipe.a .step.filter{border-color:#5c3e2b;color:#eab389}
+.pipe.a .step.gate{border-color:#2b5c2b;color:#7edb7e}
+.pipe.a .step.drop{border-color:#5c2b2b;color:#e07070}
+.funnel{margin-top:10px}
+.funnel .bar{display:flex;align-items:center;gap:12px;margin:3px 0}
+.funnel .bar .bg{flex:0 0 auto;height:18px;background:linear-gradient(90deg,#2b5c2b,#3f8a3f);border-radius:2px}
+.funnel .bar.drop .bg{background:linear-gradient(90deg,#5c2b2b,#a34848)}
+.funnel .bar.warn .bg{background:linear-gradient(90deg,#5c4a2b,#c39232)}
+.funnel .bar .lbl{color:var(--fg);font-size:12px;min-width:280px}
+.funnel .bar .num{color:var(--fg-dim);font-size:11px;margin-left:auto;font-variant-numeric:tabular-nums}
+.rec{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px;margin:10px 0;display:grid;grid-template-columns:74px 1fr auto;gap:16px;align-items:start}
+.rec .rank{color:var(--amber);font-weight:600;font-size:12px;letter-spacing:.06em}
+.rec .rank small{display:block;color:var(--fg-dim2);font-size:10px;margin-top:2px;letter-spacing:0}
+.rec .body h3{margin:0 0 4px;color:var(--fg);font-size:13px}
+.rec .body p{margin:2px 0;color:var(--fg-dim);font-size:12px}
+.rec .cost{color:var(--fg-dim2);font-size:11px;text-align:right;white-space:nowrap}
+.rec .cost .n{color:var(--good);font-size:13px;font-weight:600;display:block}
+code,.mono{font-family:var(--mono);color:#c9d3e3;background:var(--bg-1);padding:1px 5px;border-radius:3px;font-size:12px}
+.foot{color:var(--fg-dim2);font-size:11px;margin-top:34px;padding-top:14px;border-top:1px dashed var(--line)}
+.note{color:var(--fg-dim);font-size:11px;margin-top:8px}
+ul.bare{margin:6px 0 0;padding-left:18px;color:var(--fg-dim)}
+ul.bare li{margin:3px 0}
+.hstack{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--fg-dim2);vertical-align:middle;margin-right:5px}
+.dot.good{background:var(--good)} .dot.warn{background:var(--warn)} .dot.crit{background:var(--critical)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;color:var(--fg)}
+th{color:var(--fg-dim2);font-weight:500;font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+tr:last-child td{border-bottom:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="eyebrow">NEWSDESK · 内部方法说明 · 2026-09-09</div>
+<h1>大佬动向为什么这么少 —— 捕获方法当前长这样</h1>
+<p class="subtitle">问题不在候选池不够大，而在两条通路都跑不满。下面把管道、卡点、数据、和三条 ROI 排序的升级方向摊开。</p>
+
+<h2>一、当前状态（真实库存）</h2>
+<div class="grid kpi-row">
+  <div class="card kpi"><div class="n">53</div><div class="l">跟踪的大佬</div><div class="h">movement_people.json</div></div>
+  <div class="card kpi warn"><div class="n">20</div><div class="l">近期新闻中被提及</div><div class="h">alias 命中 items 表</div></div>
+  <div class="card kpi warn"><div class="n">5</div><div class="l">近 12 月已发布行动的人</div><div class="h">recent_people</div></div>
+  <div class="card kpi crit"><div class="n">2</div><div class="l">自动抽取产出的候选</div><div class="h">rules-v1 / 全库 9807 稿</div></div>
+</div>
+<p class="note"><span class="dot crit"></span>核心异常：稿件到候选的转化率 <b>0.02%</b>；已发布 20 条里 <b>rules-v1 = 0</b>，全部是我手写 seed。</p>
+
+<h2>二、两条捕获通路</h2>
+<div class="grid two-col">
+
+  <div class="card">
+    <div class="hstack" style="margin-bottom:6px"><span class="tag a">通路 A</span><b>新闻自动抽取（rules-v1）</b></div>
+    <p class="note">看新闻流，从聚类里正则匹配"人 + 动词 + 事实"，做发布门禁校验。</p>
+    <div class="pipe a" style="margin:12px 0">
+      <span class="step">抓稿<small>74 信源</small></span><span class="arr">→</span>
+      <span class="step">聚类<small>去重+并句</small></span><span class="arr">→</span>
+      <span class="step filter">人物匹配<small>alias + 官方稿允许机构归因</small></span><span class="arr">→</span>
+      <span class="step filter">动词规则<small>7 类 ACTION_RULES</small></span><span class="arr">→</span>
+      <span class="step drop">排除<small>PLANNING/SPEECH/NEGATION/引语</small></span><span class="arr">→</span>
+      <span class="step filter">事实对齐<small>object + amount ±5%</small></span><span class="arr">→</span>
+      <span class="step gate">发布门禁<small>1 一次源 或 2 独立媒体</small></span>
+    </div>
+    <h3>关键代码</h3>
+    <ul class="bare">
+      <li><code>newsdesk/movements.py:14</code> — 7 条 ACTION_RULES（收购/投资/减持/建成/合同/裁员/任命）</li>
+      <li><code>movements.py:32-35</code> — PLANNING / SPEECH / NEGATION / PERSONAL 四类反向过滤</li>
+      <li><code>movements.py:436</code> — <code>review_event()</code> 发布门禁：verified + observed_fact + object + person + (一次源 OR 2 独立源) + 关键字段引用</li>
+    </ul>
+    <h3>当前产出</h3>
+    <div class="funnel">
+      <div class="bar"><div class="lbl">全库稿件</div><div class="bg" style="width:100%"></div><div class="num">9,807</div></div>
+      <div class="bar"><div class="lbl">带任一大佬 alias 的稿件</div><div class="bg" style="width:12%"></div><div class="num">~1,180（估）</div></div>
+      <div class="bar warn"><div class="lbl">进入 extract_cluster 有匹配</div><div class="bg" style="width:2%"></div><div class="num">~130</div></div>
+      <div class="bar drop"><div class="lbl">动词命中 + 反向过滤后存活</div><div class="bg" style="width:0.4%"></div><div class="num">2 draft</div></div>
+      <div class="bar drop"><div class="lbl">通过发布门禁</div><div class="bg" style="width:0.1%"></div><div class="num">0</div></div>
+    </div>
+    <h3>为什么这么低</h3>
+    <ul class="bare">
+      <li>规则过严：SPEECH 会毙掉几乎所有 "X 表示 / X 认为 / X 称..." 的中文报道句</li>
+      <li>门禁过严：入库时就要求 2 独立源印证同一动词+对象+金额（±5%），中文财经稿常写"传闻/据悉"被 PLANNING 拦掉</li>
+      <li>信源结构不匹配：74 个 feed 以时政/宏观为主，AI 一次源只有 21 个，公司公告类结构化源覆盖不足</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="hstack" style="margin-bottom:6px"><span class="tag b">通路 B</span><b>人工种子（curated seed）</b></div>
+    <p class="note">我 WebSearch 查、交叉核验、写进 <code>data/movement_seed.json</code>，走 <code>sync_curated</code> 过门禁发布。</p>
+    <div class="pipe" style="margin:12px 0">
+      <span class="step">WebSearch<small>关键词+人名</small></span><span class="arr">→</span>
+      <span class="step">交叉核验<small>≥2 独立所有者 quote</small></span><span class="arr">→</span>
+      <span class="step">手写 seed<small>schema v12 全字段</small></span><span class="arr">→</span>
+      <span class="step">sync_curated<small>ON CONFLICT DO NOTHING</small></span><span class="arr">→</span>
+      <span class="step">发布门禁<small>同一套</small></span>
+    </div>
+    <h3>关键代码</h3>
+    <ul class="bare">
+      <li><code>movement_seed.json</code> — 当前 20 条种子，含 execution_status / analytical_boundary</li>
+      <li><code>movements.py:486</code> — <code>sync_curated()</code> 导入 + 附加 persons/evidence/themes/citations，然后强制过 review_event</li>
+    </ul>
+    <h3>当前产出</h3>
+    <div class="funnel">
+      <div class="bar"><div class="lbl">seed 条目</div><div class="bg" style="width:35%"></div><div class="num">20</div></div>
+      <div class="bar"><div class="lbl">通过发布门禁</div><div class="bg" style="width:35%"></div><div class="num">20</div></div>
+      <div class="bar"><div class="lbl">近 12 月窗口内</div><div class="bg" style="width:12%"></div><div class="num">7</div></div>
+    </div>
+    <h3>为什么无法靠这条撑满</h3>
+    <ul class="bare">
+      <li>手速瓶颈：一次搜集+核验+写 seed 需要 30-60 分钟 / 条，一个人一天最多加 10 条</li>
+      <li>WebFetch 目前全 403，只能靠 WebSearch 抓 snippet 再引，不能拉全文 → 每条都要标 provenance flag 让运维复核</li>
+      <li>不可持续：一旦停手，近期窗口就重新退化到只剩 2 条黄仁勋</li>
+    </ul>
+  </div>
+</div>
+
+<h2>三、扩大大佬池不解决问题</h2>
+<div class="card">
+  <table>
+    <thead><tr><th>假设动作</th><th>预期效果</th><th>实际结果</th></tr></thead>
+    <tbody>
+      <tr><td>把池子从 53 扩到 100 人</td><td>更多可跟踪人</td><td>命中新闻的比例 20/53≈38% 会继续下探，"待补证" 从 48 变成 90+，UI 看起来更空</td></tr>
+      <tr><td>把入库门禁降到 1 独立源</td><td>更多入库</td><td>会掉进"传闻/据悉/表示"陷阱，虚假指控风险上升；已在 <code>analytical_boundary</code> 契约里明令禁止</td></tr>
+      <tr><td>让 LLM 直接从稿件生成事实</td><td>产出上升</td><td>LLM 造引用是这套项目的红线（见 AI_TECH_ROADMAP.md 第 88 行），会破坏"可审计"这个核心资产</td></tr>
+    </tbody>
+  </table>
+  <p class="note" style="margin-top:10px"><span class="dot warn"></span>问题不是"谁值得看"，是"能看见的信号太少"。</p>
+</div>
+
+<h2>四、升级方向（按 ROI 排序）</h2>
+
+<div class="rec">
+  <div class="rank">R1<small>短期</small></div>
+  <div class="body">
+    <h3>把结构化一次源接进 74 个 feed</h3>
+    <p>SEC EDGAR（8-K/13D/13F-HR/Form 4）、Berkshire IR、Alphabet Investor blog、NVIDIA newsroom、SoftBank IR、SEC 全文检索、Companies House、香港联交所披露易。这些是<b>已经结构化、时间戳精确、每条都自带 primary_source</b>的"机构自曝"，一次源角色直接满足发布门禁。</p>
+    <p><span class="tag ok">动词覆盖</span> 已经命中 ACTION_RULES 的 "acquired / invested / appointed / resigned / signed" &nbsp; <span class="tag ok">法律水位</span> 一次源，无需 2 独立媒体印证</p>
+  </div>
+  <div class="cost"><span class="n">+30~80/周</span>预期新增行动<br>2-3 天工程</div>
+</div>
+
+<div class="rec">
+  <div class="rank">R2<small>中期</small></div>
+  <div class="body">
+    <h3>把入库门禁和发布门禁拆开：candidate 队列 + 人工分诊</h3>
+    <p>当前 <code>review_event</code> 卡在"入库=发布"这一步，等价于两独立源印证前不入库；改成：rules-v1 抽出候选先入 draft，dashboard 加一栏"待人工分诊 (candidates)"，我或运维每天扫一遍点<i>发布 / 拒绝 / 补证据</i>。发布门禁本身不放松，只是把"抓不到就丢掉"改成"抓到先存着"。</p>
+    <p><span class="tag ok">代码改动</span> ~40 行：<code>extraction_method='rules-v1' AND workflow_status='draft'</code> 的列表接口 + 前端点按钮 &nbsp; <span class="tag ok">安全性</span> 门禁完全不动</p>
+  </div>
+  <div class="cost"><span class="n">+10~20/周</span>预期新增行动<br>0.5 天工程</div>
+</div>
+
+<div class="rec">
+  <div class="rank">R3<small>中期</small></div>
+  <div class="body">
+    <h3>为每个大佬维护定向监控（entity feed）</h3>
+    <p>目前是"新闻流里碰上大佬名字"这种被动模式；改成主动模式：给每个大佬构造一个人名 + 主关联机构 + 竞品 + 关联赛道的关键词组合，走 Google Alerts / Bing news RSS / 公司 IR feed 定向抓，独立入 <code>items</code> 表，标 <code>source_role="official"</code>（若来自 IR）或 <code>"wire"</code>（若来自主流通讯社）。</p>
+    <p><span class="tag ok">覆盖修复</span> 直接把 20/53 拉到 40+/53 &nbsp; <span class="tag">依赖</span> 每个大佬得手工维护一次关键词卡片</p>
+  </div>
+  <div class="cost"><span class="n">+15~30/周</span>预期新增行动<br>3-5 天工程</div>
+</div>
+
+<div class="rec">
+  <div class="rank">R4<small>长期</small></div>
+  <div class="body">
+    <h3>LLM 二次结构化，但只做"改写不做证据"</h3>
+    <p>候选事件已由 rules-v1 抓出且带原文 quote 后，LLM 只做：(a) 把 quote 里的对象/金额/时间填成 schema 字段；(b) 生成 observed_fact / analytical_boundary。LLM<b>不能</b>产生新引用、不能改变来源身份、不能把"未证实"翻成"已证实"。这是 AI_TECH_ROADMAP.md 里已经画好的红线。</p>
+    <p><span class="tag ok">质量</span> 用 kimi-k2.6 交叉验证 &nbsp; <span class="tag bad">风险</span> 需要另做一套评估集</p>
+  </div>
+  <div class="cost"><span class="n">+20~40/周</span>预期新增行动<br>1-2 周工程</div>
+</div>
+
+<h2>五、如果只能做一件事</h2>
+<div class="card">
+  <p>做 <b>R1 + R2</b>：SEC EDGAR / IR blog / 交易所披露作为一次源接进 feed（R1），rules-v1 抽的 draft 不再直接丢弃、进 candidate 队列（R2）。两件加起来 3-4 天，预期近 12 月窗口从 <b>7 条 / 5 人</b> 涨到 <b>60+ 条 / 25+ 人</b>，覆盖率越过 <code>monitor_status.coverage_status = "healthy"</code> 的门槛（recent_people ≥ 27）。</p>
+  <p class="note">这两条都不动发布门禁、不引入 LLM 造证据的风险，也不需要扩大大佬池；纯粹是把当前管道的堵点疏通。</p>
+</div>
+
+<div class="foot">
+  数据来自本机 <code>data/newsdesk.db</code> 2026-09-09 09:37 快照 · 稿件/聚类/事件计数与 <code>monitor_status()</code> 返回一致 · 本页离线 self-contained，未引任何 CDN。
+</div>
+
+</div>
+</body>
+</html>

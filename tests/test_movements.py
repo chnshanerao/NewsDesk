@@ -42,10 +42,20 @@ class MovementLedgerTests(unittest.TestCase):
 
     def test_schema_v12_is_idempotent_and_persons_are_separate(self):
         store.init(self.conn)
-        self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0], 13)
-        self.assertGreaterEqual(self.conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0], 30)
+        self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0], 14)
+        self.assertGreaterEqual(self.conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0], 53)
         self.assertIsNotNone(self.conn.execute(
             "SELECT 1 FROM persons WHERE id='person_sam_altman'").fetchone())
+        policy = self.conn.execute(
+            "SELECT category FROM persons WHERE id='person_kazuo_ueda'").fetchone()
+        self.assertEqual(policy["category"], "policy")
+
+    def test_execution_status_defaults_to_completed(self):
+        self._cluster("c-status", "Sam Altman invested $375 million in Helion")
+        movements.extract_recent(self.conn, SOURCE_META, 0)
+        event = movements.list_events(
+            self.conn, workflow="all", verification="all")["items"][0]
+        self.assertEqual(event["execution_status"], "completed")
 
     def test_catalog_sync_retires_but_never_deletes_historical_people(self):
         self.conn.execute(
@@ -89,6 +99,16 @@ class MovementLedgerTests(unittest.TestCase):
     def test_company_action_and_person_in_separate_fields_are_not_joined(self):
         self._cluster("c-misattribution", "Tesla invested $5 billion",
                       "Elon Musk attended a conference", second=True)
+        result = movements.extract_recent(self.conn, SOURCE_META, 0)
+        self.assertEqual(result["candidates"], 0)
+
+    def test_generic_completed_phrase_is_not_misclassified_as_acquisition(self):
+        self._cluster("c-role-change", "Tim Cook completed a leadership transition")
+        result = movements.extract_recent(self.conn, SOURCE_META, 0)
+        self.assertEqual(result["candidates"], 0)
+
+    def test_sold_out_crowd_is_not_a_divestment(self):
+        self._cluster("c-sold-out", "Elon Musk addressed a sold-out crowd")
         result = movements.extract_recent(self.conn, SOURCE_META, 0)
         self.assertEqual(result["candidates"], 0)
 
@@ -181,6 +201,7 @@ class MovementLedgerTests(unittest.TestCase):
             "amount_value_text": "$375 million", "amount_currency": "USD",
             "amount_basis": "personal investment", "confidence": .98,
             "materiality_score": .9, "observed_fact": "Sam Altman invested in Helion.",
+            "execution_status": "contracted",
             "analytical_boundary": "This establishes the investment, not its future return.",
             "persons": [{"person_id": "person_sam_altman", "role": "beneficial_owner",
                          "attribution_confidence": 1.0, "control_basis": "personal investment"}],
@@ -197,6 +218,18 @@ class MovementLedgerTests(unittest.TestCase):
         event = movements.list_events(self.conn)["items"][0]
         self.assertEqual(event["id"], "mov_curated_test")
         self.assertEqual(event["workflow_status"], "published")
+        self.assertEqual(event["execution_status"], "contracted")
+
+        # A later curated schema revision may add a normalized amount without
+        # reopening or rewriting the already-published evidence ledger.
+        self.conn.execute(
+            "UPDATE movement_events SET amount_usd_text=NULL WHERE id='mov_curated_test'")
+        self.conn.commit()
+        entry["amount_usd_text"] = "375000000"
+        self.assertEqual(movements.sync_curated(self.conn, [entry]), 0)
+        self.assertEqual(self.conn.execute(
+            "SELECT amount_usd_text FROM movement_events WHERE id='mov_curated_test'"
+        ).fetchone()[0], "375000000")
 
 
 if __name__ == "__main__":

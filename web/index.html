@@ -9,7 +9,10 @@
 <body>
 
 <div class="topbar">
-  <button class="brand" id="btn-about" title="为什么有 NEWSDESK"><b>NEWSDESK</b><span>信源甄别终端</span></button>
+  <button class="brand" id="btn-about" title="为什么有 NEWSDESK">
+    <b>NEWSDESK</b>
+    <span class="brand-copy"><strong>只看真新闻</strong><small>在虚假、奶头乐与营销伪装中，把注意力还给可验证的重要事实。</small></span>
+  </button>
   <div class="tabs">
     <button class="tab on" data-view="signal">值得看<kbd>1</kbd></button>
     <button class="tab" data-view="unverified">待证<kbd>2</kbd></button>
@@ -18,12 +21,12 @@
   <div class="mode-switch" role="group" aria-label="新闻浏览模式">
     <button class="mode-btn" data-mode="public" title="不使用个人相关性门槛">公共全景</button>
     <button class="mode-btn on" data-mode="personal" title="按当前个人画像筛选">为我推荐</button>
+    <a class="mode-btn movement-entry" href="/movements.html" title="查看人物的可验证资本与组织行动"><small>试运行</small>大佬动向</a>
   </div>
   <input id="q" class="search" placeholder="搜索；支持 source: lang: topic: asset: cred: after:  /" autocomplete="off">
   <div class="spacer"></div>
   <button class="btn" id="btn-sources">信源 <kbd>s</kbd></button>
   <button class="btn ai-radar-btn" id="btn-ai-radar">AI 雷达 <kbd>i</kbd></button>
-  <a class="btn" id="btn-movements" href="/movements.html">人物动向 <kbd>m</kbd></a>
   <button class="btn research-btn" id="btn-research">研究 <kbd>e</kbd></button>
   <button class="btn" id="btn-quality">质量 <kbd>q</kbd></button>
   <button class="btn" id="btn-digest">简报 <kbd>d</kbd></button>

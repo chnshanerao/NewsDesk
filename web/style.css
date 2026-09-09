@@ -52,10 +52,12 @@ button { font-family: var(--mono); font-size: 12px; cursor: pointer; }
   background: linear-gradient(#141b24, #0f151d);
   border-bottom: 1px solid var(--line-2);
 }
-.brand { display: flex; align-items: baseline; gap: 7px; padding: 0; border: 0; background: transparent; }
+.brand { display: flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; text-align: left; }
 .brand b { color: var(--amber); letter-spacing: 1.5px; font-size: 14px; }
-.brand span { color: var(--fg-dim2); font-size: 10px; letter-spacing: .5px; }
-.brand:hover span,.brand:focus-visible span { color: var(--fg); }
+.brand-copy { display: grid; gap: 1px; color: var(--fg-dim2); }
+.brand-copy strong { color: var(--fg); font-size: 11px; letter-spacing: .5px; font-weight: 650; }
+.brand-copy small { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; letter-spacing: .1px; }
+.brand:hover .brand-copy small,.brand:focus-visible .brand-copy small { color: var(--fg); }
 
 .tabs { display: flex; gap: 2px; margin-left: 6px; }
 .tab {
@@ -66,6 +68,9 @@ button { font-family: var(--mono); font-size: 12px; cursor: pointer; }
 .tab.on { color: #0a0d12; background: var(--amber); font-weight: 700; }
 .tab kbd { opacity: .55; margin-left: 4px; font-size: 9px; }
 .mode-switch { display: flex; border: 1px solid var(--line-2); border-radius: 2px; overflow: hidden; }
+.mode-switch a.mode-btn { text-decoration: none; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.movement-entry { color: var(--amber) !important; border-left: 1px solid var(--line-2) !important; }
+.movement-entry small { padding: 1px 3px; border: 1px solid currentColor; font-size: 8px; letter-spacing: .05em; }
 .mode-btn { padding: 3px 8px; border: 0; border-right: 1px solid var(--line-2);
             background: #0a0f16; color: var(--fg-dim2); }
 .mode-btn:last-child { border-right: 0; }
@@ -399,7 +404,7 @@ button { font-family: var(--mono); font-size: 12px; cursor: pointer; }
 .command-foot { border-top: 1px solid var(--line); }
 
 @media (max-width: 900px) {
-  .brand span,.clock,.command-trigger kbd { display: none; }
+  .brand-copy small,.clock,.command-trigger kbd { display: none; }
   .topbar { gap: 6px; }
   .search { width: 130px; }
 }

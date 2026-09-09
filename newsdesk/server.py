@@ -274,18 +274,36 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
                         "GROUP BY t.id ORDER BY t.kind,t.name_zh")]
                     return self._json({"items": rows, "generated_at": now_ts()})
 
+                if p == "/api/movement-trends":
+                    try:
+                        after = int(q["after"]) if q.get("after") else None
+                    except ValueError:
+                        return self._json({"error": "invalid after"}, 400)
+                    return self._json(movements.trend_summary(conn, after=after))
+
+                if p == "/api/movement-monitor-status":
+                    return self._json(movements.monitor_status(conn))
+
                 if p == "/api/movements":
                     try:
                         limit = max(1, min(100, int(q.get("limit", 50))))
                         offset = max(0, int(q.get("offset", 0)))
                     except ValueError:
                         return self._json({"error": "invalid pagination"}, 400)
+                    order = q.get("order", "recent")
+                    if order not in {"recent", "materiality"}:
+                        return self._json({"error": "invalid order"}, 400)
+                    try:
+                        after = int(q["after"]) if q.get("after") else None
+                    except ValueError:
+                        return self._json({"error": "invalid after"}, 400)
                     # Anonymous reads are intentionally unable to request drafts,
                     # rejected records or internal review notes.
                     return self._json(movements.list_events(
                         conn, person=q.get("person"), theme=q.get("theme"),
                         action_type=q.get("action_type"), region=q.get("region"),
                         workflow="published", verification="verified",
+                        order=order, after=after,
                         limit=limit, offset=offset))
 
                 if p == "/api/admin/movements":

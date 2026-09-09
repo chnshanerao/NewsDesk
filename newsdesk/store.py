@@ -310,7 +310,7 @@ CREATE INDEX IF NOT EXISTS idx_movement_reviews_event
     ON movement_reviews(movement_id,reviewed_ts DESC);
 """
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 
 def _ensure_column(conn, table, name, declaration):
@@ -398,6 +398,11 @@ def _movement_review_audit(conn):
     conn.executescript(MOVEMENT_REVIEW_SCHEMA)
 
 
+def _movement_execution_status(conn):
+    _ensure_column(conn, "movement_events", "execution_status",
+                   "TEXT NOT NULL DEFAULT 'completed'")
+
+
 MIGRATIONS = (
     (1, "baseline", _baseline),
     (2, "evidence_and_source_health", _evidence_health),
@@ -412,6 +417,7 @@ MIGRATIONS = (
     (11, "item_body_preview", _item_body_preview),
     (12, "person_and_movement_ledger", _movement_ledger),
     (13, "movement_review_audit", _movement_review_audit),
+    (14, "movement_execution_status", _movement_execution_status),
 )
 
 
