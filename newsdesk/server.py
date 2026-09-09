@@ -146,6 +146,7 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
     try:
         store.init(catalog_conn)
         movements.sync_catalog(catalog_conn)
+        movements.sync_curated(catalog_conn)
     finally:
         catalog_conn.close()
     class Handler(BaseHTTPRequestHandler):
@@ -258,14 +259,19 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
             conn = store.connect()
             try:
                 if p == "/api/persons":
-                    return self._json({"items": movements.list_people(conn),
+                    people = movements.list_people(conn)
+                    for person in people:
+                        person.pop("candidate_count", None)
+                    return self._json({"items": people,
                                        "generated_at": now_ts()})
 
                 if p == "/api/movement-themes":
                     rows = [dict(row) for row in conn.execute(
-                        "SELECT t.*,COUNT(mt.movement_id) movement_count "
+                        "SELECT t.*,COUNT(CASE WHEN me.workflow_status='published' "
+                        "AND me.verification_status='verified' THEN mt.movement_id END) movement_count "
                         "FROM movement_theme_catalog t LEFT JOIN movement_themes mt "
-                        "ON mt.theme_id=t.id GROUP BY t.id ORDER BY t.kind,t.name_zh")]
+                        "ON mt.theme_id=t.id LEFT JOIN movement_events me ON me.id=mt.movement_id "
+                        "GROUP BY t.id ORDER BY t.kind,t.name_zh")]
                     return self._json({"items": rows, "generated_at": now_ts()})
 
                 if p == "/api/movements":

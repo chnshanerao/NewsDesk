@@ -306,7 +306,7 @@ class ApiLanguageFilterTests(unittest.TestCase):
                 f"http://127.0.0.1:{port}/api/movements?workflow=all&verification=all",
                 timeout=3) as response:
             payload = json.loads(response.read().decode("utf-8"))
-        self.assertEqual(payload["total"], 0)
+        self.assertNotIn("mov-private", {item["id"] for item in payload["items"]})
         with self.assertRaises(urllib.error.HTTPError) as caught:
             urllib.request.urlopen(
                 f"http://127.0.0.1:{port}/api/movement/mov-private", timeout=3)

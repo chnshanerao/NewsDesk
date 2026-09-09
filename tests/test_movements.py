@@ -173,6 +173,31 @@ class MovementLedgerTests(unittest.TestCase):
             "SELECT observed_fact FROM movement_events WHERE id=?", (movement_id,)).fetchone()[0],
             "human reviewed fact")
 
+    def test_curated_seed_is_idempotent_and_passes_same_publish_gate(self):
+        entry = {
+            "id": "mov_curated_test", "action_type": "capital_allocate",
+            "verb_code": "invested", "actor_kind": "personal", "title": "Curated action",
+            "object_text": "Helion", "occurred_from_ts": 1000, "disclosed_ts": 1100,
+            "amount_value_text": "$375 million", "amount_currency": "USD",
+            "amount_basis": "personal investment", "confidence": .98,
+            "materiality_score": .9, "observed_fact": "Sam Altman invested in Helion.",
+            "analytical_boundary": "This establishes the investment, not its future return.",
+            "persons": [{"person_id": "person_sam_altman", "role": "beneficial_owner",
+                         "attribution_confidence": 1.0, "control_basis": "personal investment"}],
+            "themes": ["energy"],
+            "evidence": [{"id": "mev_curated_test", "source_name": "Primary filing",
+                          "source_owner": "primary", "source_role": "regulatory_filing",
+                          "url": "https://example.test/filing", "published_ts": 1100,
+                          "quote": "Sam Altman invested $375 million in Helion.",
+                          "independence_group": "primary", "fields":
+                          ["actor", "action", "object", "amount", "disclosure_date"]}]
+        }
+        self.assertEqual(movements.sync_curated(self.conn, [entry]), 1)
+        self.assertEqual(movements.sync_curated(self.conn, [entry]), 0)
+        event = movements.list_events(self.conn)["items"][0]
+        self.assertEqual(event["id"], "mov_curated_test")
+        self.assertEqual(event["workflow_status"], "published")
+
 
 if __name__ == "__main__":
     unittest.main()

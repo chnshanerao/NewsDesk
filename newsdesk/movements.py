@@ -38,7 +38,10 @@ MONEY = re.compile(
     r"\s*(美元|美金|元|人民币|欧元|英镑)?", re.I)
 
 THEMES = (
+    ("capital_allocation", "资本配置", "Capital allocation", "strategy", ("投资", "收购", "持股", "资本开支", "invest", "acquisition", "capital expenditure")),
     ("ai_infrastructure", "AI 基础设施", "AI infrastructure", "topic", ("AI", "人工智能", "算力", "数据中心", "GPU", "芯片")),
+    ("cloud_infrastructure", "云与数据中心", "Cloud and data centers", "topic", ("云", "数据中心", "cloud", "data center")),
+    ("digital_platforms", "数字平台", "Digital platforms", "topic", ("平台", "社交媒体", "游戏", "platform", "social media", "gaming")),
     ("energy", "能源", "Energy", "topic", ("能源", "电力", "核聚变", "太阳能", "energy", "fusion", "power")),
     ("japan", "日本", "Japan", "region", ("日本", "Japan", "Tokyo", "东京")),
     ("latin_america", "拉丁美洲", "Latin America", "region", ("拉美", "拉丁美洲", "Brazil", "Mexico", "Argentina", "巴西", "墨西哥", "阿根廷")),
@@ -105,6 +108,14 @@ def sync_catalog(conn) -> None:
                 (aid, person["id"], affiliation.get("entity_id"), affiliation["organization"],
                  affiliation["role_code"], affiliation["relationship_type"], affiliation["control_level"],
                  "current", "human_approved", now, now))
+    conn.commit()
+
+
+def sync_themes(conn) -> None:
+    for slug, zh, en, kind, _ in THEMES:
+        conn.execute("INSERT INTO movement_theme_catalog(id,slug,name_zh,name_en,kind,review_status) "
+                     "VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name_zh=excluded.name_zh,name_en=excluded.name_en",
+                     (slug, slug, zh, en, kind, "human_approved"))
     conn.commit()
 
 
@@ -321,10 +332,7 @@ def extract_cluster(conn, cluster_id: str, source_meta: dict[str, dict]) -> list
 
 def extract_recent(conn, source_meta: dict[str, dict], since_ts: int) -> dict:
     sync_catalog(conn)
-    for slug, zh, en, kind, _ in THEMES:
-        conn.execute("INSERT INTO movement_theme_catalog(id,slug,name_zh,name_en,kind,review_status) "
-                     "VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name_zh=excluded.name_zh,name_en=excluded.name_en",
-                     (slug, slug, zh, en, kind, "human_approved"))
+    sync_themes(conn)
     cluster_ids = [r[0] for r in conn.execute("SELECT id FROM clusters WHERE last_ts>=?", (since_ts,))]
     n = 0
     active = []
@@ -453,6 +461,79 @@ def review_event(conn, movement_id: str, *, verification_status: str,
          row["workflow_status"], workflow_status, reviewer[:80], reason[:1000], int(time.time())))
     conn.commit()
     return get_event(conn, movement_id)
+
+
+def sync_curated(conn, entries: list[dict] | None = None) -> int:
+    """Import human-reviewed benchmark actions and pass each through publication gates."""
+    if entries is None:
+        seed_path = config.DATA_DIR / "movement_seed.json"
+        if not seed_path.exists():
+            return 0
+        entries = json.loads(seed_path.read_text(encoding="utf-8"))["movements"]
+    sync_catalog(conn)
+    sync_themes(conn)
+    now = int(time.time())
+    imported = 0
+    for entry in entries:
+        movement_id = entry["id"]
+        conn.execute(
+            "INSERT INTO movement_events(id,action_type,verb_code,actor_kind,actor_entity_id,title,summary,"
+            "object_text,occurred_from_ts,occurred_to_ts,time_precision,disclosed_ts,amount_value_text,"
+            "amount_currency,amount_basis,geography_json,verification_status,workflow_status,confidence,"
+            "materiality_score,marketing_risk,observed_fact,analytical_boundary,unknowns_json,"
+            "extraction_method,dedupe_key,created_ts,updated_ts) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(id) DO NOTHING",
+            (movement_id, entry["action_type"], entry["verb_code"], entry["actor_kind"],
+             entry.get("actor_entity_id"), entry["title"], entry.get("summary", ""),
+             entry["object_text"], entry.get("occurred_from_ts"), entry.get("occurred_to_ts"),
+             entry.get("time_precision", "day"), entry["disclosed_ts"],
+             entry.get("amount_value_text"), entry.get("amount_currency"),
+             entry.get("amount_basis"), json.dumps(entry.get("geography", []), ensure_ascii=False),
+             "verified", "reviewed", entry["confidence"], entry["materiality_score"],
+             entry.get("marketing_risk", 0), entry["observed_fact"], entry["analytical_boundary"],
+             json.dumps(entry.get("unknowns", []), ensure_ascii=False), "human-curated-v1",
+             entry.get("dedupe_key", movement_id), now, now))
+        if conn.execute("SELECT workflow_status FROM movement_events WHERE id=?", (movement_id,)).fetchone()[0] == "published":
+            continue
+        conn.execute("DELETE FROM movement_persons WHERE movement_id=?", (movement_id,))
+        for actor in entry["persons"]:
+            conn.execute(
+                "INSERT INTO movement_persons(movement_id,person_id,role,attribution_confidence,control_basis) "
+                "VALUES(?,?,?,?,?)",
+                (movement_id, actor["person_id"], actor["role"], actor["attribution_confidence"],
+                 actor["control_basis"]))
+        conn.execute("DELETE FROM movement_evidence WHERE movement_id=?", (movement_id,))
+        field_citations = []
+        for evidence in entry["evidence"]:
+            evidence_id = evidence["id"]
+            quote = evidence["quote"]
+            quote_hash = hashlib.sha256(quote.encode()).hexdigest()
+            conn.execute(
+                "INSERT INTO movement_evidence(id,movement_id,source_id,source_name,source_owner,source_role,"
+                "tier,url,title,published_ts,retrieved_ts,quote,quote_field,quote_start,quote_end,quote_hash,"
+                "relation,independence_group,relation_confidence,original_lang,archived_ref) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (evidence_id, movement_id, evidence.get("source_id"), evidence["source_name"],
+                 evidence["source_owner"], evidence["source_role"], evidence.get("tier", 0),
+                 evidence["url"], evidence.get("title"), evidence.get("published_ts"), now, quote,
+                 "curated_quote", 0, len(quote), quote_hash, "support",
+                 evidence["independence_group"], 1.0, evidence.get("original_lang", "en"),
+                 evidence.get("archived_ref")))
+            field_citations.extend((field, evidence_id) for field in evidence["fields"])
+        conn.execute("DELETE FROM movement_fact_citations WHERE movement_id=?", (movement_id,))
+        conn.executemany(
+            "INSERT INTO movement_fact_citations(movement_id,field_name,evidence_id) VALUES(?,?,?)",
+            [(movement_id, field, evidence_id) for field, evidence_id in field_citations])
+        conn.execute("DELETE FROM movement_themes WHERE movement_id=?", (movement_id,))
+        conn.executemany(
+            "INSERT INTO movement_themes(movement_id,theme_id,assignment_method,confidence) VALUES(?,?,?,?)",
+            [(movement_id, theme, "human-curated-v1", 1.0) for theme in entry.get("themes", [])])
+        conn.commit()
+        review_event(conn, movement_id, verification_status="verified", workflow_status="published",
+                     reviewer="curated-seed", reason="Verified against cited primary records")
+        imported += 1
+    return imported
 
 
 def list_people(conn) -> list[dict]:
