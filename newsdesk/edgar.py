@@ -56,15 +56,12 @@ def _field(block: str, tag: str) -> str:
     return (m.group(1) or "").strip() if m else ""
 
 
-def information_table_url(index_url: str) -> str | None:
-    """从申报索引页找到 13F 持仓附表 XML。
+# 索引页上的报告截止日（"Period of Report  2026-06-30"）。13F 申报日和报告截止日不同——
+# 仓位快照对应的是截止日那天的持仓，季度相减必须按截止日对齐，用申报日会错季。
+_PERIOD = re.compile(r"Period of Report.*?(\d{4}-\d{2}-\d{2})", re.S | re.I)
 
-    索引页里通常有两个 XML：primary_doc.xml（封面，含总额但不含逐条持仓）
-    和一个数字命名的附表（如 56757.xml）。取后者。
-    """
-    if not index_url or "sec.gov" not in index_url:
-        return None
-    page = _get(index_url)
+
+def _table_url_from_page(page: str, index_url: str) -> str | None:
     base = index_url.rsplit("/", 1)[0]
     candidates = []
     for href in _HREF.findall(page):
@@ -78,6 +75,17 @@ def information_table_url(index_url: str) -> str | None:
                           ("https://www.sec.gov" + href if href.startswith("/")
                            else f"{base}/{href}"))
     return candidates[0] if candidates else None
+
+
+def information_table_url(index_url: str) -> str | None:
+    """从申报索引页找到 13F 持仓附表 XML。
+
+    索引页里通常有两个 XML：primary_doc.xml（封面，含总额但不含逐条持仓）
+    和一个数字命名的附表（如 56757.xml）。取后者。
+    """
+    if not index_url or "sec.gov" not in index_url:
+        return None
+    return _table_url_from_page(_get(index_url), index_url)
 
 
 def _unit_scale(prices: list[float]) -> int:
@@ -97,10 +105,13 @@ def _unit_scale(prices: list[float]) -> int:
 
 
 def parse_information_table(xml: str) -> dict:
-    """解析 13F 持仓附表。返回总市值、头寸数与按市值合并后的持仓列表。
+    """解析 13F 持仓附表。返回总市值、头寸数与按 CUSIP 合并后的持仓列表。
 
-    同一发行人可能拆成多行（不同管理人/投票权），必须按发行人合并，
-    否则『前五大持仓』会把同一家公司重复列出来。
+    同一发行人可能拆成多行（不同管理人/投票权），必须合并，否则『前五大持仓』
+    会把同一家公司重复列出来。合并键用 CUSIP —— 它是 SEC 规定的稳定证券标识，
+    跨季不变；发行人名会有 "APPLE INC" / "APPLE INC COM" 之类写法漂移，
+    直接拿名字当键会导致相邻季 join 不上、误判成清仓+新建仓。
+    没有 CUSIP 的行（罕见）退回发行人名做键。
     """
     holdings: dict[str, dict] = {}
     rows = 0
@@ -118,11 +129,14 @@ def parse_information_table(xml: str) -> dict:
             shares = float(_field(block, "sshPrnamt").replace(",", "") or 0)
         except ValueError:
             shares = 0.0
+        cusip = _field(block, "cusip").strip().upper()
         rows += 1
         # 债券按面值填报（PRN），单价恒等于 1，会把单位判定拖到阈值边上 —— 只取股票行
         if shares > 0 and value > 0 and _field(block, "sshPrnamtType").upper() in ("SH", ""):
             prices.append(value / shares)
-        agg = holdings.setdefault(issuer, {"issuer": issuer, "value": 0.0, "shares": 0.0})
+        key = cusip or issuer
+        agg = holdings.setdefault(key, {"cusip": cusip, "issuer": issuer,
+                                        "value": 0.0, "shares": 0.0})
         agg["value"] += value
         agg["shares"] += shares
     scale = _unit_scale(prices)
@@ -173,15 +187,29 @@ def summarize_13f(table: dict, top: int = 5) -> dict | None:
 
 
 def holdings_from_filing(index_url: str) -> dict | None:
-    """索引页 URL → 持仓摘要。任何一步拿不到就返回 None（宁缺勿编）。"""
+    """索引页 URL → 持仓摘要 + 报告截止日 + 逐条持仓。
+
+    索引页只抓一次，同时拿附表链接和报告截止日（Period of Report）。
+    返回的 summary 额外带：
+      - ``period``：报告截止日（YYYY-MM-DD），季度相减对齐用；解析不到则为 ""。
+      - ``holdings``：全部逐条持仓（含 cusip），供 edgar_holdings 落库算 delta。
+      - ``table_url``：持仓附表 XML 链接。
+    任何一步拿不到就返回 None（宁缺勿编）。
+    """
     try:
-        table_url = information_table_url(index_url)
+        if not index_url or "sec.gov" not in index_url:
+            return None
+        page = _get(index_url)
+        table_url = _table_url_from_page(page, index_url)
         if not table_url:
             return None
+        period_m = _PERIOD.search(page)
         table = parse_information_table(_get(table_url))
         summary = summarize_13f(table)
         if summary:
             summary["table_url"] = table_url
+            summary["period"] = period_m.group(1) if period_m else ""
+            summary["holdings"] = table["holdings"]
         return summary
     except (urllib.error.HTTPError, urllib.error.URLError, OSError, ValueError):
         return None

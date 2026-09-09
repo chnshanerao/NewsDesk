@@ -134,7 +134,22 @@ class MovementLedgerTests(unittest.TestCase):
         self.assertEqual(table["n_rows"], 3)
         self.assertEqual(table["n_issuers"], 2)
         self.assertEqual(table["total_value"], 1500)
-        self.assertEqual(table["holdings"][0], {"issuer": "APPLE INC", "value": 1000, "shares": 10})
+        self.assertEqual(table["holdings"][0],
+                         {"cusip": "", "issuer": "APPLE INC", "value": 1000, "shares": 10})
+
+    def test_13f_aggregates_by_cusip_not_issuer_name(self):
+        # 发行人名会漂移（"APPLE INC" / "APPLE INC COM"），CUSIP 稳定 —— 按 CUSIP 合并，
+        # 否则相邻季 join 不上，会误判成清仓+新建仓
+        xml = """<informationTable>
+          <infoTable><nameOfIssuer>APPLE INC</nameOfIssuer><cusip>037833100</cusip>
+            <value>600</value><shrsOrPrnAmt><sshPrnamt>6</sshPrnamt></shrsOrPrnAmt></infoTable>
+          <infoTable><nameOfIssuer>APPLE INC COM</nameOfIssuer><cusip>037833100</cusip>
+            <value>400</value><shrsOrPrnAmt><sshPrnamt>4</sshPrnamt></shrsOrPrnAmt></infoTable>
+        </informationTable>"""
+        table = edgar.parse_information_table(xml)
+        self.assertEqual(table["n_issuers"], 1)
+        self.assertEqual(table["holdings"][0]["cusip"], "037833100")
+        self.assertEqual(table["holdings"][0]["shares"], 10)
 
     def test_13f_values_reported_in_thousands_are_rescaled(self):
         # 大量申报人沿用旧的千美元惯例，附表里没有单位字段，只能用每股单价反推
@@ -199,6 +214,92 @@ class MovementLedgerTests(unittest.TestCase):
         self.assertEqual((row["workflow_status"], row["extraction_method"], row["object_text"]),
                          ("draft", "edgar-v1", ""))
 
+    def _hold(self, period, cusip, issuer, value, shares, filer="person_michael_burry",
+              disclosed_ts=1000):
+        self.conn.execute(
+            "INSERT INTO edgar_holdings(filer_key,period,cusip,issuer,value_usd,shares,"
+            "filer_org,filing_url,table_url,disclosed_ts) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (filer, period, cusip, issuer, value, shares, "Scion Asset Management",
+             f"https://www.sec.gov/filing/{filer}-{period}", None, disclosed_ts))
+        self.conn.commit()
+
+    def test_13f_deltas_classify_and_gate_position_changes(self):
+        q1, q2 = "2026-03-31", "2026-06-30"
+        # 新建仓：Q1 无、Q2 $3B（价$300）→ 建仓规模 ≥ $200M
+        self._hold(q2, "AAA", "New Bet Corp", 3e9, 10_000_000)
+        # 清仓：Q1 $1B（价$200）、Q2 无 → 清仓规模 ≥ $200M
+        self._hold(q1, "BBB", "Exited Co", 1e9, 5_000_000)
+        # 加仓：+19M 股 × $100 = $1.9B ≥ 绝对门槛 $1B
+        self._hold(q1, "CCC", "Bigger Stake Inc", 1e8, 1_000_000)
+        self._hold(q2, "CCC", "Bigger Stake Inc", 2e9, 20_000_000)
+        # 小额减仓：-100k 股 × $100 = $10M，相对 10% —— 三道门槛全不过，不发布
+        self._hold(q1, "DDD", "Tiny Trim Co", 1e8, 1_000_000)
+        self._hold(q2, "DDD", "Tiny Trim Co", 9e7, 900_000)
+        # 相对门槛减仓：-2M 股（50%）× $300 = $600M ≥ $200M 且 ≥25%
+        self._hold(q1, "EEE", "Half Sold Ltd", 1.2e9, 4_000_000)
+        self._hold(q2, "EEE", "Half Sold Ltd", 6e8, 2_000_000)
+
+        result = movements.compute_13f_deltas(self.conn)
+        self.assertEqual(result["published"], 4)  # AAA/BBB/CCC/EEE，DDD 被门槛拦下
+
+        published = movements.list_events(self.conn)["items"]
+        verbs = {e["object_text"].split("（")[0]: e["verb_code"] for e in published}
+        self.assertEqual(verbs["New Bet Corp"], "position_open")
+        self.assertEqual(verbs["Exited Co"], "position_close")
+        self.assertEqual(verbs["Bigger Stake Inc"], "position_increase")
+        self.assertEqual(verbs["Half Sold Ltd"], "position_decrease")
+        self.assertNotIn("Tiny Trim Co", verbs)  # 小额调仓不刷屏
+
+        sample = next(e for e in published if e["verb_code"] == "position_increase")
+        self.assertEqual(sample["workflow_status"], "published")
+        self.assertEqual(sample["verification_status"], "verified")
+        self.assertEqual(sample["extraction_method"], "edgar-13f-delta-v1")
+        self.assertEqual(sample["persons"][0]["id"], "person_michael_burry")
+        # 两份 13F 都作一次源引用，且关键字段全有引用
+        self.assertEqual(len([e for e in sample["evidence"]
+                              if e["source_role"] == "regulatory_filing"]), 2)
+        for field in ("actor", "action", "object", "disclosure_date", "amount"):
+            self.assertIn(field, sample["fact_citations"])
+
+        # 幂等：再算一次不产生重复
+        self.assertEqual(movements.compute_13f_deltas(self.conn)["published"], 0)
+        self.assertEqual(movements.list_events(self.conn)["total"], 4)
+
+    def test_13f_delta_continuity_adds_materiality_bonus(self):
+        # 同一标的连续两季同向加仓，第二段应拿到 +0.1 的 materiality 加分
+        for i, period in enumerate(("2026-03-31", "2026-06-30", "2026-09-30")):
+            self._hold(period, "FFF", "Steady Buyer Co", 1.5e9 * (i + 1), 15_000_000 * (i + 1))
+        movements.compute_13f_deltas(self.conn)
+        rows = {e["object_text"]: e["materiality_score"]
+                for e in movements.list_events(self.conn, order="recent")["items"]}
+        scores = sorted(rows.values())
+        # 第一段 .9（trade $1.5B），第二段连续同向 → 1.0
+        self.assertEqual(scores, [0.9, 1.0])
+
+    def test_13f_backfill_stores_holdings_idempotently(self):
+        movement_id = self._pending_13f(url="https://www.sec.gov/filing/13f-backfill")
+        summary = {"period": "2026-06-30",
+                   "table_url": "https://www.sec.gov/Archives/edgar/data/1/2/t.xml",
+                   "holdings": [{"cusip": "037833100", "issuer": "APPLE INC",
+                                 "value": 2.0e9, "shares": 10_000_000},
+                                {"cusip": "191216100", "issuer": "COCA COLA CO",
+                                 "value": 5.0e8, "shares": 8_000_000}]}
+        with mock.patch.object(edgar, "holdings_from_filing", return_value=summary) as fetch:
+            r1 = movements.backfill_13f_holdings(self.conn)
+            self.assertEqual((r1["fetched"], r1["filings_stored"]), (1, 1))
+            self.assertEqual(fetch.call_count, 1)
+            # 同一份申报已入库 → 二次运行跳过、不再联网
+            r2 = movements.backfill_13f_holdings(self.conn)
+            self.assertEqual((r2["fetched"], r2["skipped"]), (0, 1))
+            self.assertEqual(fetch.call_count, 1)
+        rows = self.conn.execute(
+            "SELECT filer_key,period,cusip,shares FROM edgar_holdings ORDER BY cusip").fetchall()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["filer_key"], "person_michael_burry")
+        self.assertEqual(rows[0]["period"], "2026-06-30")
+        self.assertEqual(rows[0]["shares"], 10_000_000)
+        self.assertTrue(movement_id)
+
     def test_edgar_8k_without_mapped_item_is_skipped(self):
         self._edgar_cluster(
             "c-edgar-skip", "sec_nvidia", "NVIDIA 8-K · 2026-08-02 · 0001045810-26-000200",
@@ -210,7 +311,7 @@ class MovementLedgerTests(unittest.TestCase):
 
     def test_schema_v12_is_idempotent_and_persons_are_separate(self):
         store.init(self.conn)
-        self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0], 14)
+        self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0], store.SCHEMA_VERSION)
         self.assertGreaterEqual(self.conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0], 53)
         self.assertIsNotNone(self.conn.execute(
             "SELECT 1 FROM persons WHERE id='person_sam_altman'").fetchone())

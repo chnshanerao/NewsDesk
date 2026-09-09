@@ -39,6 +39,18 @@ SEC_UA = os.getenv("NEWSDESK_SEC_UA", "NEWSDESK filings monitor (contact ops@new
 EDGAR_WINDOW_DAYS = int(os.getenv("NEWSDESK_EDGAR_WINDOW_DAYS", "365"))
 # 每轮最多自动解析多少份 13F 持仓附表（每份要 2 次 SEC 请求，限速 0.4s/次）。
 EDGAR_13F_MAX_PER_RUN = int(os.getenv("NEWSDESK_EDGAR_13F_MAX_PER_RUN", "12"))
+# ---- 13F 相邻季仓位变化（delta）的发布门槛 ----
+# 一份 13F 只报当季一张快照，加/减/清/建仓要靠相邻季按 CUSIP 相减算出来。
+# 仓位变化按『股数变化』度量（市值随股价波动，不能反映实际交易）；成交额 ≈ Δ股数 × 当季单价，
+# 把主动交易和被动的价格涨跌分开。命中任一门槛即自动发布（B 模式，激进）：
+#   1) 绝对成交额 ≥ 10 亿美元；
+#   2) 相对仓位变动 ≥ 25% 且 成交额 ≥ 2 亿美元（小仓位翻倍不值当，加下限）；
+#   3) 清仓/新建仓：期初或期末仓位市值 ≥ 2 亿美元。
+# 连续 ≥2 季同向只作 materiality 加分，不单独触发（避免每季小额调仓刷屏）。
+EDGAR_DELTA_ABS_USD = float(os.getenv("NEWSDESK_EDGAR_DELTA_ABS_USD", "1e9"))
+EDGAR_DELTA_REL = float(os.getenv("NEWSDESK_EDGAR_DELTA_REL", "0.25"))
+EDGAR_DELTA_REL_MIN_USD = float(os.getenv("NEWSDESK_EDGAR_DELTA_REL_MIN_USD", "2e8"))
+EDGAR_DELTA_NEWEXIT_MIN_USD = float(os.getenv("NEWSDESK_EDGAR_DELTA_NEWEXIT_MIN_USD", "2e8"))
 HTTP_TIMEOUT = int(os.getenv("NEWSDESK_TIMEOUT", "20"))
 SQLITE_BUSY_TIMEOUT = int(os.getenv("NEWSDESK_SQLITE_BUSY_TIMEOUT", "120"))
 FETCH_WORKERS = int(os.getenv("NEWSDESK_WORKERS", "6"))

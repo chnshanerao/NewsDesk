@@ -310,7 +310,22 @@ CREATE INDEX IF NOT EXISTS idx_movement_reviews_event
     ON movement_reviews(movement_id,reviewed_ts DESC);
 """
 
-SCHEMA_VERSION = 14
+# 13F 逐持仓快照。申报本身只报当季一张快照，季度之间的加/减/清/建仓看不见 ——
+# 把每季持仓按 (申报人, 季度截止日, CUSIP) 存下来，才能相邻季相减算出仓位变化。
+# CUSIP 是 SEC 规定的稳定证券标识（发行人名称会有 "APPLE INC" / "APPLE INC COM" 之类
+# 写法漂移），用它做 join 键；没有 CUSIP 的行退回发行人名。
+EDGAR_HOLDINGS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS edgar_holdings (
+    filer_key TEXT NOT NULL, period TEXT NOT NULL, cusip TEXT NOT NULL,
+    issuer TEXT NOT NULL, value_usd REAL NOT NULL DEFAULT 0,
+    shares REAL NOT NULL DEFAULT 0, filer_org TEXT, filing_url TEXT,
+    table_url TEXT, disclosed_ts INTEGER,
+    PRIMARY KEY(filer_key,period,cusip)
+);
+CREATE INDEX IF NOT EXISTS idx_edgar_holdings_filer ON edgar_holdings(filer_key,period);
+"""
+
+SCHEMA_VERSION = 15
 
 
 def _ensure_column(conn, table, name, declaration):
@@ -403,6 +418,10 @@ def _movement_execution_status(conn):
                    "TEXT NOT NULL DEFAULT 'completed'")
 
 
+def _edgar_holdings(conn):
+    conn.executescript(EDGAR_HOLDINGS_SCHEMA)
+
+
 MIGRATIONS = (
     (1, "baseline", _baseline),
     (2, "evidence_and_source_health", _evidence_health),
@@ -418,6 +437,7 @@ MIGRATIONS = (
     (12, "person_and_movement_ledger", _movement_ledger),
     (13, "movement_review_audit", _movement_review_audit),
     (14, "movement_execution_status", _movement_execution_status),
+    (15, "edgar_13f_holdings", _edgar_holdings),
 )
 
 

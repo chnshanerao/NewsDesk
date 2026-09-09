@@ -258,8 +258,14 @@ def backfill_filings(conn, reg: dict, *, pages: int = 4, years: int = 5,
         f"{filings['candidates']} 条候选")
     auto = movements.autocomplete_13f(conn, limit=10_000)
     log(f"  13F 持仓自动补全并发布 {auto['published']}/{auto['scanned']} 份")
+    # 逐条持仓落库 → 相邻季相减算加/减/清/建仓（这才是『看大佬做了什么』的实质动作）
+    holdings = movements.backfill_13f_holdings(conn, limit=10_000)
+    log(f"  13F 持仓落库 {holdings['filings_stored']} 份（跳过已存 {holdings['skipped']}）")
+    deltas = movements.compute_13f_deltas(conn)
+    log(f"  相邻季仓位变化自动发布 {deltas['published']} 条（{deltas['filers']} 个申报人）")
     return {"sources": len(srcs), "pages": pages_done, "n_new": total_new,
-            "candidates": filings["candidates"], "published": auto["published"]}
+            "candidates": filings["candidates"], "published": auto["published"],
+            "deltas": deltas["published"]}
 
 
 def run(conn, reg: dict, profile: dict, *, use_llm=False, only=None,

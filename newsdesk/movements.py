@@ -1,6 +1,7 @@
 """Public-professional action ledger: what people did, never what they merely said."""
 from __future__ import annotations
 
+import calendar
 import hashlib
 import json
 import re
@@ -572,6 +573,240 @@ def autocomplete_13f(conn, limit: int = 20) -> dict:
         except (ValueError, LookupError):
             failed.append(row["id"])
     return {"scanned": len(rows), "published": len(published), "failed": len(failed)}
+
+
+# 13F 相邻季仓位变化的方向。分组 up/down 用于判断『连续同向』（加分，见 compute_13f_deltas）。
+_DELTA_DIRECTIONS = {
+    "new":  ("capital_allocate", "position_open",     "新建仓", "up"),
+    "add":  ("capital_allocate", "position_increase", "加仓",   "up"),
+    "trim": ("capital_reduce",   "position_decrease", "减仓",   "down"),
+    "exit": ("capital_reduce",   "position_close",    "清仓",   "down"),
+}
+
+
+def _period_ts(period: str) -> int | None:
+    try:
+        return calendar.timegm(time.strptime(period, "%Y-%m-%d"))
+    except (ValueError, TypeError):
+        return None
+
+
+def backfill_13f_holdings(conn, limit: int = 10_000) -> dict:
+    """把每份 13F 的逐条持仓落进 edgar_holdings，供相邻季算 delta。
+
+    扫描『所有』13F 动向（含已发布的）—— 已发布的不会再走 autocomplete_13f，
+    但它们仍是算下一季 delta 时不可或缺的前一季基准。按 (person, period, cusip)
+    幂等入库；同一份申报（filing_url）已入库则跳过，不重复联网解析。
+    """
+    from . import edgar  # 延迟导入：解析器要联网，纯离线用例不该被牵连
+
+    rows = conn.execute(
+        "SELECT e.id, mp.person_id, ev.url, ev.source_name, e.disclosed_ts "
+        "FROM movement_events e "
+        "JOIN movement_persons mp ON mp.movement_id=e.id "
+        "JOIN movement_evidence ev ON ev.movement_id=e.id AND ev.source_role='regulatory_filing' "
+        "WHERE e.verb_code='portfolio_report' AND ev.url<>'' "
+        "GROUP BY e.id ORDER BY e.disclosed_ts DESC LIMIT ?", (limit,)).fetchall()
+    fetched = stored = skipped = 0
+    for row in rows:
+        if conn.execute("SELECT 1 FROM edgar_holdings WHERE filing_url=? LIMIT 1",
+                        (row["url"],)).fetchone():
+            skipped += 1
+            continue
+        summary = edgar.holdings_from_filing(row["url"])
+        fetched += 1
+        if not summary or not summary.get("period") or not summary.get("holdings"):
+            continue
+        period = summary["period"]
+        filer_key = row["person_id"]
+        filer_org = row["source_name"] or filer_key
+        conn.executemany(
+            "INSERT INTO edgar_holdings(filer_key,period,cusip,issuer,value_usd,shares,"
+            "filer_org,filing_url,table_url,disclosed_ts) VALUES(?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(filer_key,period,cusip) DO UPDATE SET value_usd=excluded.value_usd,"
+            "shares=excluded.shares,issuer=excluded.issuer,filing_url=excluded.filing_url,"
+            "table_url=excluded.table_url,disclosed_ts=excluded.disclosed_ts",
+            [(filer_key, period, h.get("cusip") or h["issuer"], h["issuer"],
+              h["value"], h["shares"], filer_org, row["url"],
+              summary.get("table_url"), row["disclosed_ts"]) for h in summary["holdings"]])
+        conn.commit()
+        stored += 1
+    return {"scanned": len(rows), "fetched": fetched, "filings_stored": stored, "skipped": skipped}
+
+
+def _delta_filing_evidence(conn, url: str):
+    """复用已入库的申报证据行的溯源信息（item_id / 源 / 语言），保持证据可追溯。"""
+    return conn.execute(
+        "SELECT item_id,source_id,source_name,source_owner,tier,title,published_ts,"
+        "retrieved_ts,original_lang FROM movement_evidence "
+        "WHERE url=? AND source_role='regulatory_filing' LIMIT 1", (url,)).fetchone()
+
+
+def _publish_13f_delta(conn, *, filer_key, filer_org, prev_p, cur_p, prev_url, cur_url,
+                       cusip, issuer, shares_prev, shares_cur, value_prev, value_cur,
+                       label, action_type, verb_code, trade_usd, materiality,
+                       disclosed_ts, occurred_ts, now) -> str:
+    """把一条已过门槛的仓位变化落库为动向并自动发布。引用前后两份 13F 作一次源。"""
+    from .edgar import _usd, _usd_long  # 金额写法与 13F 摘要保持一致，且能被 _amount 解析
+    d_shares = shares_cur - shares_prev
+    dedupe = hashlib.sha256(
+        f"13f-delta|{filer_key}|{cusip}|{prev_p}|{cur_p}".encode()).hexdigest()
+    movement_id = "mov_" + dedupe[:24]
+    object_text = (f"{issuer}（CUSIP {cusip}）：{label} {abs(d_shares):,.0f} 股；"
+                   f"持股 {shares_prev:,.0f} → {shares_cur:,.0f} 股，"
+                   f"市值 {_usd(value_prev)} → {_usd(value_cur)}")
+    observed = (f"SEC 记录：{filer_org} 的 13F 持仓由 {prev_p} 至 {cur_p} "
+                f"对 {issuer} {label}（股数 {shares_prev:,.0f} → {shares_cur:,.0f}）。")
+    boundary = ("该记录只对比两份 13F 季度快照的持股数差异，季度之间的具体买卖时点与价格不可见；"
+                "成交额为股数差 × 当季申报单价的估算，非实际成交金额。"
+                "机构持仓变动不等同于相关人物的个人操作或财富变化。")
+    amount_text = _usd_long(trade_usd) if trade_usd > 0 else None
+    amt = _amount(amount_text) if amount_text else {"currency": None, "usd": None}
+    conn.execute(
+        "INSERT INTO movement_events(id,cluster_id,action_type,verb_code,actor_kind,title,summary,object_text,"
+        "occurred_from_ts,time_precision,disclosed_ts,amount_value_text,amount_currency,amount_usd_text,"
+        "amount_basis,geography_json,verification_status,workflow_status,confidence,materiality_score,"
+        "marketing_risk,observed_fact,analytical_boundary,unknowns_json,extraction_method,dedupe_key,"
+        "created_ts,updated_ts,execution_status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (movement_id, None, action_type, verb_code, "controlled_institution",
+         f"{filer_org}：{label} {issuer}", observed, object_text,
+         occurred_ts, "quarter", disclosed_ts, amount_text, amt["currency"],
+         str(amt["usd"]) if amt["usd"] is not None else None, "filing_derived",
+         "[]", "verified", "draft", .85, materiality, 0,
+         observed, boundary,
+         json.dumps(["成交额为股数差×当季单价的估算，非实际成交金额",
+                     "季度间的买卖时点与中途加减仓不可见（13F 只报季末快照）"], ensure_ascii=False),
+         "edgar-13f-delta-v1", dedupe, now, now, "completed"))
+    conn.execute("DELETE FROM movement_persons WHERE movement_id=?", (movement_id,))
+    conn.execute(
+        "INSERT INTO movement_persons(movement_id,person_id,role,attribution_confidence,control_basis) "
+        "VALUES(?,?,?,?,?)",
+        (movement_id, filer_key, "executive", .9, "controls SEC filer entity"))
+    conn.execute("DELETE FROM movement_evidence WHERE movement_id=?", (movement_id,))
+    conn.execute("DELETE FROM movement_fact_citations WHERE movement_id=?", (movement_id,))
+    ev_ids = []
+    quotes = {
+        cur_url: (f"{cur_p} 13F 持仓：{issuer} {shares_cur:,.0f} 股（{_usd(value_cur)}）"
+                  if shares_cur > 0 else f"{issuer} 已不在 {cur_p} 13F 申报中（清仓）"),
+        prev_url: (f"{prev_p} 13F 持仓：{issuer} {shares_prev:,.0f} 股（{_usd(value_prev)}）"
+                   if shares_prev > 0 else f"{issuer} 不在 {prev_p} 13F 申报中（新建仓前）"),
+    }
+    for url, quote in quotes.items():
+        if not url:
+            continue
+        meta = _delta_filing_evidence(conn, url)
+        quote_hash = hashlib.sha256(quote.encode()).hexdigest()
+        evidence_id = "mev_" + hashlib.sha256(
+            f"{movement_id}|{url}|{quote_hash}".encode()).hexdigest()[:24]
+        conn.execute(
+            "INSERT INTO movement_evidence(id,movement_id,item_id,source_id,source_name,source_owner,"
+            "source_role,tier,url,title,published_ts,retrieved_ts,quote,quote_field,quote_start,quote_end,"
+            "quote_hash,relation,independence_group,relation_confidence,original_lang) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (evidence_id, movement_id, meta["item_id"] if meta else None,
+             meta["source_id"] if meta else None,
+             meta["source_name"] if meta else filer_org,
+             meta["source_owner"] if meta else "SEC EDGAR",
+             "regulatory_filing", meta["tier"] if meta else 0, url,
+             meta["title"] if meta else f"{filer_org} 13F-HR",
+             meta["published_ts"] if meta else disclosed_ts,
+             meta["retrieved_ts"] if meta else now, quote, "derived_from_table",
+             0, len(quote), quote_hash, "support",
+             meta["source_owner"] if meta else "SEC EDGAR", .95,
+             meta["original_lang"] if meta else "en"))
+        ev_ids.append(evidence_id)
+    fields = ["actor", "action", "object", "disclosure_date"] + (["amount"] if amount_text else [])
+    conn.executemany(
+        "INSERT INTO movement_fact_citations(movement_id,field_name,evidence_id) VALUES(?,?,?)",
+        [(movement_id, field, ev) for field in fields for ev in ev_ids])
+    conn.execute("DELETE FROM movement_themes WHERE movement_id=?", (movement_id,))
+    for slug in _themes(issuer, action_type):
+        conn.execute("INSERT INTO movement_themes(movement_id,theme_id,assignment_method,confidence) VALUES(?,?,?,?)",
+                     (movement_id, slug, "edgar-13f-delta-v1", .8))
+    conn.commit()
+    review_event(conn, movement_id, verification_status="verified",
+                 workflow_status="published", reviewer="edgar-13f-delta-v1",
+                 reason=f"Auto-derived position change between 13F snapshots {prev_p} → {cur_p}")
+    return movement_id
+
+
+def compute_13f_deltas(conn) -> dict:
+    """相邻季 13F 快照按 CUSIP 相减，算出加/减/清/建仓，过门槛的自动发布。
+
+    仓位变化按『股数变化』度量（市值随股价波动，不能反映实际交易）；
+    成交额 ≈ |Δ股数| × 当季申报单价，把主动交易和被动价格涨跌分开。
+    命中任一门槛即发布（B 模式）；连续 ≥2 季同向额外加 materiality +0.1。
+    每一位都来自两份 13F 附表，可在 SEC 原文逐条核对，不引入模型猜测。
+    """
+    sync_catalog(conn)   # 归因人物需在册
+    sync_themes(conn)    # 主题外键需先建目录，否则挂主题时 FK 失败
+    filers = [r[0] for r in conn.execute("SELECT DISTINCT filer_key FROM edgar_holdings")]
+    now = int(time.time())
+    created = []
+    for filer_key in filers:
+        periods = [r[0] for r in conn.execute(
+            "SELECT DISTINCT period FROM edgar_holdings WHERE filer_key=? ORDER BY period",
+            (filer_key,))]
+        last_group: dict[str, str] = {}  # cusip → 上一季变化方向（up/down），用于连续同向判定
+        for prev_p, cur_p in zip(periods, periods[1:]):
+            prev = {h["cusip"]: h for h in conn.execute(
+                "SELECT * FROM edgar_holdings WHERE filer_key=? AND period=?", (filer_key, prev_p))}
+            cur = {h["cusip"]: h for h in conn.execute(
+                "SELECT * FROM edgar_holdings WHERE filer_key=? AND period=?", (filer_key, cur_p))}
+            any_row = next(iter(cur.values()), None) or next(iter(prev.values()), None)
+            filer_org = (any_row["filer_org"] if any_row else None) or filer_key
+            prev_url = next((h["filing_url"] for h in prev.values()), None)
+            cur_url = next((h["filing_url"] for h in cur.values()), None)
+            disclosed_ts = next((h["disclosed_ts"] for h in cur.values()), now)
+            occurred_ts = _period_ts(cur_p)
+            for cusip in set(prev) | set(cur):
+                p, c = prev.get(cusip), cur.get(cusip)
+                shares_prev = p["shares"] if p else 0.0
+                shares_cur = c["shares"] if c else 0.0
+                d_shares = shares_cur - shares_prev
+                if abs(d_shares) < 1:  # 无股数变化（含债券面值等噪声）
+                    continue
+                value_prev = p["value_usd"] if p else 0.0
+                value_cur = c["value_usd"] if c else 0.0
+                issuer = (c or p)["issuer"]
+                if shares_prev == 0:
+                    direction = "new"
+                elif shares_cur == 0:
+                    direction = "exit"
+                else:
+                    direction = "add" if d_shares > 0 else "trim"
+                action_type, verb_code, label, group = _DELTA_DIRECTIONS[direction]
+                # 当季单价：优先用本季 value/shares，清仓时退回上季
+                price = (value_cur / shares_cur if shares_cur > 0 else
+                         value_prev / shares_prev if shares_prev > 0 else 0.0)
+                trade_usd = abs(d_shares) * price
+                rel = abs(d_shares) / shares_prev if shares_prev > 0 else float("inf")
+                position_size = (value_cur if direction == "new" else
+                                 value_prev if direction == "exit" else max(value_prev, value_cur))
+                gate = (trade_usd >= config.EDGAR_DELTA_ABS_USD
+                        or (shares_prev > 0 and rel >= config.EDGAR_DELTA_REL
+                            and trade_usd >= config.EDGAR_DELTA_REL_MIN_USD)
+                        or (direction in ("new", "exit")
+                            and position_size >= config.EDGAR_DELTA_NEWEXIT_MIN_USD))
+                continued = last_group.get(cusip) == group
+                last_group[cusip] = group
+                if not gate:
+                    continue
+                dedupe = hashlib.sha256(
+                    f"13f-delta|{filer_key}|{cusip}|{prev_p}|{cur_p}".encode()).hexdigest()
+                if conn.execute("SELECT 1 FROM movement_events WHERE dedupe_key=?",
+                                (dedupe,)).fetchone():
+                    continue  # 已发布过，勿重复
+                materiality = min(1.0, _materiality(action_type, trade_usd) + (0.1 if continued else 0))
+                movement_id = _publish_13f_delta(
+                    conn, filer_key=filer_key, filer_org=filer_org, prev_p=prev_p, cur_p=cur_p,
+                    prev_url=prev_url, cur_url=cur_url, cusip=cusip, issuer=issuer,
+                    shares_prev=shares_prev, shares_cur=shares_cur, value_prev=value_prev,
+                    value_cur=value_cur, label=label, action_type=action_type, verb_code=verb_code,
+                    trade_usd=trade_usd, materiality=materiality, disclosed_ts=disclosed_ts,
+                    occurred_ts=occurred_ts, now=now)
+                created.append(movement_id)
+    return {"filers": len(filers), "published": len(created)}
 
 
 def extract_recent(conn, source_meta: dict[str, dict], since_ts: int) -> dict:
