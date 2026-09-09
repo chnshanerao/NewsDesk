@@ -24,3 +24,6 @@ data/recovery-status.json
 
 # 用于把本地历史交给有 GitHub 推送权限的机器（沙箱内 push 被 403 拒绝）
 .git-bundles/
+
+# 沙箱经 GitHub API 推送的工具脚本（读 ~/.gh_push_token，勿入库）
+.git_api_push.py
