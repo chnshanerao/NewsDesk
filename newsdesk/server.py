@@ -284,6 +284,9 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
                 if p == "/api/movement-monitor-status":
                     return self._json(movements.monitor_status(conn))
 
+                if p == "/api/movement-periods":
+                    return self._json(movements.period_counts(conn))
+
                 if p == "/api/movements":
                     try:
                         limit = max(1, min(100, int(q.get("limit", 50))))
@@ -817,7 +820,8 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
         def do_POST(self):
             u = urllib.parse.urlparse(self.path)
             if u.path not in ("/api/refresh", "/api/alerts", "/api/alert-events/read",
-                              "/api/watchlist") and not u.path.startswith("/api/movement-review/"):
+                              "/api/watchlist") and not u.path.startswith("/api/movement-review/") \
+                    and not u.path.startswith("/api/movement-complete/"):
                 return self._send(404, b"not found", "text/plain; charset=utf-8")
             if not self._same_origin_write():
                 return self._json({"ok": False, "msg": "拒绝跨站写操作"}, 403)
@@ -837,6 +841,29 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
                             conn, u.path.rsplit("/", 1)[-1],
                             verification_status=str(body.get("verification_status") or "candidate"),
                             workflow_status=str(body.get("workflow_status") or "draft"),
+                            reviewer="token-admin", reason=str(body.get("reason") or ""))
+                    finally:
+                        conn.close()
+                    return self._json({"ok": True, "item": item})
+                except LookupError as exc:
+                    return self._json({"error": str(exc)}, 404)
+                except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                    return self._json({"error": str(exc)}, 400)
+            if u.path.startswith("/api/movement-complete/"):
+                try:
+                    size = int(self.headers.get("Content-Length", "0"))
+                    if size <= 0 or size > 16384:
+                        return self._json({"error": "invalid body"}, 400)
+                    body = json.loads(self.rfile.read(size))
+                    if not isinstance(body, dict):
+                        return self._json({"error": "invalid payload"}, 400)
+                    conn = store.connect()
+                    try:
+                        item = movements.complete_and_publish(
+                            conn, u.path.rsplit("/", 1)[-1],
+                            object_text=str(body.get("object_text") or ""),
+                            amount_value_text=(str(body["amount_value_text"])
+                                               if body.get("amount_value_text") else None),
                             reviewer="token-admin", reason=str(body.get("reason") or ""))
                     finally:
                         conn.close()

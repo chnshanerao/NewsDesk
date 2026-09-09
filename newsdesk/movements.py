@@ -29,6 +29,46 @@ ACTION_RULES = (
         r"(?:获任命|正式出任|辞任|离任|appointed|named .{0,20}(?:chief|chair|director)|resigned)", re.I)),
 )
 
+# SEC EDGAR 结构化申报 → 动作类型。表单类型 + 8-K/6-K Item 码是稳定信号（不靠自然语言动词）。
+# 只映射语义明确的申报；其余（10-Q/10-K/纯财报 8-K item）跳过，不制造噪声草稿。
+EDGAR_ACTIONS = {
+    "SC 13D": ("acquisition", "stake_acquire"),
+    "SC 13D/A": ("acquisition", "stake_acquire"),
+    "13F-HR": ("capital_allocate", "portfolio_report"),
+    "13F-HR/A": ("capital_allocate", "portfolio_report"),
+    "4": ("capital_allocate", "insider_txn"),
+    "8-K:2.01": ("acquisition", "completed_acquisition"),  # 完成资产收购/处置
+    "8-K:1.01": ("contract", "signed_contract"),           # 签订重大协议
+    "8-K:5.02": ("appointment", "appointed_or_resigned"),  # 董事/高管任免
+}
+EDGAR_ITEM_LABELS = {
+    "SC 13D": "举牌/大额权益披露（SC 13D）",
+    "SC 13D/A": "举牌权益变更（SC 13D/A）",
+    "13F-HR": "机构持仓季报（13F-HR）",
+    "13F-HR/A": "机构持仓季报修订（13F-HR/A）",
+    "4": "内部人交易（Form 4）",
+    "8-K:2.01": "完成资产收购或处置（Item 2.01）",
+    "8-K:1.01": "签订重大协议（Item 1.01）",
+    "8-K:5.02": "董事/高管任免（Item 5.02）",
+}
+_EDGAR_ITEM_RE = re.compile(r"Item\s+(\d+\.\d+)", re.I)
+
+
+def _edgar_action(form: str, summary: str):
+    """按表单 + Item 码判定动作。返回 (action_type, verb_code, item_label, item_key) 或 None。"""
+    form = (form or "").strip()
+    if form in EDGAR_ACTIONS and ":" not in form:  # 表单级（13F / 13D / Form 4）
+        at, vc = EDGAR_ACTIONS[form]
+        return at, vc, EDGAR_ITEM_LABELS.get(form, form), form
+    if form in ("8-K", "6-K"):  # 事件报告：信号在 Item 码里（6-K 少用 Item，多半跳过）
+        for m in _EDGAR_ITEM_RE.finditer(summary or ""):
+            key = f"8-K:{m.group(1)}"
+            if key in EDGAR_ACTIONS:
+                at, vc = EDGAR_ACTIONS[key]
+                return at, vc, EDGAR_ITEM_LABELS[key], key
+    return None
+
+
 PLANNING = re.compile(r"(?:计划|拟|考虑|洽谈|目标|预计|将投入|承诺|plan(?:s|ned)? to|considering|in talks|expects? to|target(?:s|ed)?)", re.I)
 SPEECH = re.compile(r"(?:表示|认为|称|呼吁|警告|预测|宣称|said|says|believes|called for|warned|predicted)", re.I)
 NEGATION = re.compile(r"(?:没有|并未|否认|不会|不打算|no plans? to|did not|denied|not investing|won't)", re.I)
@@ -344,6 +384,196 @@ def extract_cluster(conn, cluster_id: str, source_meta: dict[str, dict]) -> list
     return created
 
 
+def _edgar_upsert(conn, item, meta: dict, now: int) -> str | None:
+    """把单份 SEC 申报落成动向草稿。返回 movement_id；不可映射的申报返回 None。
+
+    与 extract_cluster 的关键区别：动作类型来自表单/Item 码（稳定可判），不靠动词；
+    收购对象申报索引页不含，故 object_text 诚实留空，进分诊队列由人补全后发布
+    （13F 例外：持仓附表是结构化的，由 edgar.py 自动补全）。
+    每条草稿自带 SEC 一次源链接（source_role=regulatory_filing），发布门禁不放松。
+    """
+    person_id = meta.get("person_id")
+    filer_org = meta.get("filer_org") or meta.get("name") or item["source_name"]
+    if not person_id:
+        return None
+    resolved = _edgar_action(meta.get("edgar_form", ""), item["summary"] or "")
+    if not resolved:
+        return None
+    action_type, verb_code, item_label, item_key = resolved
+    # 申报索引页 URL 每份唯一且入库持久（native_id 不入 items 表），作稳定去重键
+    filing_id = item["url"] or item["id"]
+    dedupe = hashlib.sha256(
+        f"edgar|{person_id}|{filing_id}|{item_key}".encode()).hexdigest()
+    movement_id = "mov_" + dedupe[:24]
+    existing = conn.execute(
+        "SELECT workflow_status FROM movement_events WHERE dedupe_key=?", (dedupe,)).fetchone()
+    if existing and existing["workflow_status"] != "draft":
+        return movement_id  # 已人工处理或已发布，勿覆盖
+    cluster_id = item["cluster_id"]  # 申报不依赖聚类；落在新闻窗口外时为 NULL
+    actor_kind = meta.get("actor_kind_default", "controlled_institution")
+    filed = time.strftime("%Y-%m-%d", time.gmtime(item["published_ts"])) if item["published_ts"] else "未知日期"
+    observed = f"SEC 记录：{filer_org} 于 {filed} 提交 {item_label}。"
+    boundary = ("该记录只确认公开申报中的行动，不证明其动机或因果关系。"
+                "机构资本不等同于相关人物的个人出资。收购/持仓对象与金额以申报正文为准，尚待补全。")
+    conn.execute(
+        "INSERT INTO movement_events(id,cluster_id,action_type,verb_code,actor_kind,title,summary,object_text,"
+        "occurred_from_ts,time_precision,disclosed_ts,amount_value_text,amount_currency,amount_usd_text,"
+        "amount_basis,geography_json,verification_status,workflow_status,confidence,materiality_score,"
+        "marketing_risk,observed_fact,analytical_boundary,unknowns_json,extraction_method,dedupe_key,"
+        "created_ts,updated_ts,execution_status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+        "ON CONFLICT(dedupe_key) DO UPDATE SET title=excluded.title,summary=excluded.summary,"
+        "disclosed_ts=excluded.disclosed_ts,observed_fact=excluded.observed_fact,updated_ts=excluded.updated_ts",
+        (movement_id, cluster_id, action_type, verb_code, actor_kind, item["title"],
+         observed, "",
+         None, "day",
+         item["published_ts"], None, None, None, "filing_disclosed",
+         "[]", "candidate", "draft", .7,
+         _materiality(action_type, None), meta.get("promotional_intensity", 0),
+         observed, boundary,
+         json.dumps(["申报对象与金额待人工按 SEC 正文补全", "披露日可能不同于实际执行日"], ensure_ascii=False),
+         "edgar-v1", dedupe, now, now, "completed"))
+    conn.execute("DELETE FROM movement_persons WHERE movement_id=?", (movement_id,))
+    conn.execute(
+        "INSERT INTO movement_persons(movement_id,person_id,role,attribution_confidence,control_basis) "
+        "VALUES(?,?,?,?,?)",
+        (movement_id, person_id, "executive", .9, "controls SEC filer entity"))
+    conn.execute("DELETE FROM movement_evidence WHERE movement_id=?", (movement_id,))
+    quote = (item["summary"] or item["title"])[:500]
+    quote_hash = hashlib.sha256(quote.encode()).hexdigest()
+    evidence_id = "mev_" + hashlib.sha256(f"{movement_id}|{item['id']}|{quote_hash}".encode()).hexdigest()[:24]
+    owner = meta.get("owner", item["source_id"])
+    conn.execute(
+        "INSERT INTO movement_evidence(id,movement_id,item_id,source_id,source_name,source_owner,"
+        "source_role,tier,url,title,published_ts,retrieved_ts,quote,quote_field,quote_start,quote_end,"
+        "quote_hash,relation,independence_group,relation_confidence,original_lang) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (evidence_id, movement_id, item["id"], item["source_id"], item["source_name"],
+         owner, "regulatory_filing", item["tier"], item["url"] or "",
+         item["title"], item["published_ts"], item["fetched_ts"], quote,
+         "summary", 0, len(quote), quote_hash, "support", owner, .95, item["lang"]))
+    conn.execute("DELETE FROM movement_fact_citations WHERE movement_id=?", (movement_id,))
+    # object 引用留待 complete_and_publish 补全；申报本身证明了主体/动作/披露日
+    conn.executemany(
+        "INSERT INTO movement_fact_citations(movement_id,field_name,evidence_id) VALUES(?,?,?)",
+        [(movement_id, field, evidence_id) for field in ("actor", "action", "disclosure_date")])
+    conn.execute("DELETE FROM movement_themes WHERE movement_id=?", (movement_id,))
+    for slug in _themes(item["title"], action_type):
+        conn.execute("INSERT INTO movement_themes(movement_id,theme_id,assignment_method,confidence) VALUES(?,?,?,?)",
+                     (movement_id, slug, "edgar-v1", .8))
+    return movement_id
+
+
+def extract_edgar_items(conn, source_meta: dict[str, dict], since_ts: int) -> dict:
+    """按条目遍历监管申报，不经过聚类。
+
+    申报是稀疏事件（8-K 约每月一份，13F 每季度一份），用新闻流的 72h 聚类窗口去卡
+    必然全部漏掉。而且申报本身就是法定一次源，不需要交叉印证 —— 聚类对它纯属多余环节。
+    """
+    sync_catalog(conn)
+    sync_themes(conn)
+    filing_sources = [sid for sid, meta in source_meta.items()
+                      if meta.get("source_role") == "regulatory_filing" and meta.get("person_id")]
+    if not filing_sources:
+        return {"filings_scanned": 0, "candidates": 0}
+    marks = ",".join("?" for _ in filing_sources)
+    rows = list(conn.execute(
+        f"SELECT * FROM items WHERE source_id IN ({marks}) AND published_ts>=? "
+        f"ORDER BY published_ts DESC", [*filing_sources, since_ts]))
+    now = int(time.time())
+    created = []
+    for item in rows:
+        movement_id = _edgar_upsert(conn, item, source_meta[item["source_id"]], now)
+        if movement_id:
+            created.append(movement_id)
+    conn.commit()
+    # 申报草稿由 (人物, 申报 URL, Item 码) 确定性生成，重跑即幂等更新，无需清理陈旧草稿。
+    return {"filings_scanned": len(rows), "candidates": len(created)}
+
+
+def complete_and_publish(conn, movement_id: str, *, object_text: str,
+                         amount_value_text: str | None = None, reviewer: str = "admin",
+                         reason: str = "") -> dict:
+    """补全 EDGAR 草稿的对象（+可选金额）并过发布门禁。单事务；门禁失败抛 ValueError。"""
+    row = conn.execute("SELECT * FROM movement_events WHERE id=?", (movement_id,)).fetchone()
+    if not row:
+        raise LookupError("movement not found")
+    object_text = (object_text or "").strip()
+    if not object_text:
+        raise ValueError("object_text required")
+    primary_ev = [r[0] for r in conn.execute(
+        "SELECT id FROM movement_evidence WHERE movement_id=? AND source_role='regulatory_filing' "
+        "AND relation='support'", (movement_id,))]
+    if not primary_ev:
+        raise ValueError("no regulatory_filing evidence to cite")
+    now = int(time.time())
+    amount_value_text = (amount_value_text or "").strip() or None
+    if amount_value_text:
+        amt = _amount(amount_value_text)
+        conn.execute(
+            "UPDATE movement_events SET object_text=?,amount_value_text=?,amount_currency=?,"
+            "amount_usd_text=?,amount_basis=?,materiality_score=?,updated_ts=? WHERE id=?",
+            (object_text, amount_value_text, amt["currency"],
+             str(amt["usd"]) if amt["usd"] is not None else None, "filing_completed",
+             _materiality(row["action_type"], amt["usd"]), now, movement_id))
+    else:
+        conn.execute("UPDATE movement_events SET object_text=?,updated_ts=? WHERE id=?",
+                     (object_text, now, movement_id))
+    # 把 object（有金额则加 amount）字段引用挂到一次源证据上
+    conn.execute("DELETE FROM movement_fact_citations WHERE movement_id=? AND field_name IN ('object','amount')",
+                 (movement_id,))
+    fields = ["object"] + (["amount"] if amount_value_text else [])
+    conn.executemany(
+        "INSERT INTO movement_fact_citations(movement_id,field_name,evidence_id) VALUES(?,?,?)",
+        [(movement_id, field, ev) for field in fields for ev in primary_ev])
+    conn.commit()
+    return review_event(conn, movement_id, verification_status="verified",
+                        workflow_status="published", reviewer=reviewer,
+                        reason=reason or "Completed object from SEC primary filing and published")
+
+
+def autocomplete_13f(conn, limit: int = 20) -> dict:
+    """自动补全并发布 13F 持仓草稿。
+
+    13F 的持仓附表是 SEC 规定的结构化 XML（发行人/CUSIP/市值/股数逐条列出），
+    所以『对象』和『金额』可以从一次源确定性推导 —— 不是模型猜测，每一位都能在
+    SEC 原文里对上。这是唯一能规模化的自动发布路径：8-K 正文是自由文本，
+    仍必须人工读完再补（见 complete_and_publish）。
+
+    标记 extraction_method='edgar-13f-v1' 以便审计时把自动补全与人工补全分开。
+    """
+    from . import edgar  # 延迟导入：解析器要联网，纯离线用例不该被牵连
+
+    rows = conn.execute(
+        "SELECT e.id, ev.url FROM movement_events e "
+        "JOIN movement_evidence ev ON ev.movement_id=e.id AND ev.source_role='regulatory_filing' "
+        "WHERE e.verb_code='portfolio_report' AND e.workflow_status='draft' "
+        "AND (e.object_text IS NULL OR e.object_text='') AND ev.url<>'' "
+        "GROUP BY e.id ORDER BY e.disclosed_ts DESC LIMIT ?", (limit,)).fetchall()
+    published, failed = [], []
+    for row in rows:
+        summary = edgar.holdings_from_filing(row["url"])
+        if not summary:
+            failed.append(row["id"])
+            continue
+        try:
+            conn.execute(
+                "UPDATE movement_events SET extraction_method='edgar-13f-v1',"
+                "unknowns_json=?,analytical_boundary=? WHERE id=?",
+                (json.dumps(["持仓为申报日快照，季度之间的买卖过程不可见",
+                             "披露日晚于持仓截止日（13F 允许滞后 45 天）"], ensure_ascii=False),
+                 "该记录只确认申报所载的持仓构成，不证明买入时点或后续操作。"
+                 "机构组合市值不等同于相关人物的个人财富。",
+                 row["id"]))
+            event = complete_and_publish(
+                conn, row["id"], object_text=summary["object_text"],
+                amount_value_text=summary["amount_value_text"], reviewer="edgar-13f-v1",
+                reason=f"Auto-derived from SEC 13F information table {summary['table_url']}")
+            published.append(event["id"])
+        except (ValueError, LookupError):
+            failed.append(row["id"])
+    return {"scanned": len(rows), "published": len(published), "failed": len(failed)}
+
+
 def extract_recent(conn, source_meta: dict[str, dict], since_ts: int) -> dict:
     sync_catalog(conn)
     sync_themes(conn)
@@ -356,6 +586,8 @@ def extract_recent(conn, source_meta: dict[str, dict], since_ts: int) -> dict:
         n += len(created)
     # Re-extraction is a replacement for draft machine candidates. Human-reviewed or
     # published records are immutable here; only stale rules-v1 drafts are removed.
+    # 申报草稿（edgar-*）不在此清理：它们由 extract_edgar_items 走独立路径，
+    # cluster_id 常为 NULL 或指向新闻窗口外的簇，误入本清理会被整批删掉。
     if cluster_ids:
         cluster_marks = ",".join("?" for _ in cluster_ids)
         if active:
@@ -616,6 +848,32 @@ def trend_summary(conn, after: int | None = None) -> dict:
             "person_count": people_n, "generated_at": int(time.time())}
 
 
+PERIODS = ((7, "近 7 天"), (14, "近 14 天"), (30, "近 30 天"), (365, "近 12 月"), (0, "完整历史"))
+
+
+def period_counts(conn) -> dict:
+    """每个时间切片有多少条行动、涉及多少人。
+
+    把数量摊在切换按钮上，是为了让『这周没人动』和『这周没抓到』看起来不一样——
+    空切片是真实结论，不该让人点进去才发现。
+    """
+    now = int(time.time())
+    items = []
+    for days, label in PERIODS:
+        args = () if days == 0 else (now - days * 86400,)
+        clause = "" if days == 0 else " AND COALESCE(e.occurred_from_ts,e.disclosed_ts)>=?"
+        base = ("FROM movement_events e WHERE e.workflow_status='published' "
+                "AND e.verification_status='verified'")
+        n = conn.execute(f"SELECT COUNT(*) {base}{clause}", args).fetchone()[0]
+        people = conn.execute(
+            "SELECT COUNT(DISTINCT mp.person_id) FROM movement_persons mp "
+            "JOIN movement_events e ON e.id=mp.movement_id WHERE e.workflow_status='published' "
+            f"AND e.verification_status='verified'{clause}", args).fetchone()[0]
+        items.append({"days": days, "label": label, "movement_count": n,
+                      "person_count": people})
+    return {"items": items, "generated_at": now}
+
+
 def monitor_status(conn) -> dict:
     """Expose coverage health without leaking unpublished candidate details."""
     now = int(time.time())
@@ -634,11 +892,16 @@ def monitor_status(conn) -> dict:
     candidates = conn.execute(
         "SELECT COUNT(*) FROM movement_events WHERE workflow_status='draft' "
         "AND COALESCE(occurred_from_ts,disclosed_ts)>=?", (after,)).fetchone()[0]
+    # 分诊队列不按时间过滤，历史回填进来的申报草稿同样等着人补全 —— 队列徽标必须
+    # 用全量数，否则回填后徽标显示 48 而点进去是 295 条，看起来像丢了数据。
+    candidates_total = conn.execute(
+        "SELECT COUNT(*) FROM movement_events WHERE workflow_status='draft'").fetchone()[0]
     latest = conn.execute(
         "SELECT MAX(COALESCE(occurred_from_ts,disclosed_ts)) FROM movement_events "
         "WHERE workflow_status='published' AND verification_status='verified'").fetchone()[0]
     return {"tracked_people": tracked, "recent_published": recent_published,
             "recent_people": recent_people, "candidates_pending_review": candidates,
+            "candidates_total": candidates_total,
             "latest_published_action_ts": latest, "window_days": 365,
             "coverage_status": "building" if recent_people < max(10, tracked // 2) else "healthy",
             "generated_at": now}

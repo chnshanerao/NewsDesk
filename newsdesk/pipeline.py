@@ -201,6 +201,67 @@ def llm_pass(conn, profile: dict, top_n: int | None = None, log=print,
     return {"n": len(pairs), "ok": ok, "err": err}
 
 
+def backfill_filings(conn, reg: dict, *, pages: int = 4, years: int = 5,
+                     only=None, log=print) -> dict:
+    """回填历史监管申报，让账本能看长期布局而不只是最近一批。
+
+    常规抓取只拿 feed 首页（最近 20-40 份），一个季度才一份的 13F 三年也就 12 份，
+    首页根本装不下。这里用 browse-edgar 的 &start= 偏移逐页往回翻。
+    与常规 run 分开的一次性/低频命令：翻 N 页 = N 次 SEC 请求 × 每个源，
+    必须串行 + 节流，否则会被 SEC 限流封 IP。
+    """
+    from . import edgar
+
+    srcs = [s for s in reg["sources"]
+            if s.get("edgar_form") and s.get("person_id") and s.get("enabled", True)]
+    if only:
+        srcs = [s for s in srcs if s["id"] in only]
+    if not srcs:
+        return {"sources": 0, "pages": 0, "n_new": 0, "candidates": 0, "published": 0}
+    total_new = pages_done = 0
+    for src in srcs:
+        src_new = 0
+        for page in range(pages):
+            # 回填时不截断（max_items 是给日常增量用的），并放宽超时：
+            # 深翻页 SEC 侧要现算，实测偶发 20s 内返回不了，但重试就好。
+            paged = {**src, "url": edgar.paged_url(src["url"], page * 100),
+                     "max_items": 0, "http_timeout": 45}
+            res = None
+            for attempt in range(3):
+                edgar.throttle()  # 与 13F 附表解析共用节流闸，不超过 SEC 的速率上限
+                res = fetch.fetch_source(paged, reg)
+                pages_done += 1
+                if res["ok"]:
+                    break
+                # SEC 对深翻页会回 503（它侧要现算），退避要按十秒级算，
+                # 3s 那种重试等于原地再撞一次。这条命令是低频管理操作，等得起。
+                log(f"  [{res['last_error']}] {src['id']} 第 {page + 1} 页，第 "
+                    f"{attempt + 1} 次退避")
+                time.sleep(10 * (attempt + 1) ** 2)
+            if not res["ok"]:
+                log(f"  [ERR] {src['id']} 第 {page + 1} 页三次均失败 ← {res['last_error']}")
+                break
+            if not res["items"]:
+                break  # 翻到底了，该源没有更多历史
+            src_new += store.insert_items(conn, res["items"])
+        total_new += src_new
+        log(f"  {src['id']:<22} 新增 {src_new:>3} 份历史申报")
+
+    movement_sources = {
+        s["id"]: {**s, "owner": s.get("owner") or s.get("group") or s["id"],
+                  "source_role": s.get("source_role", config.source_role(s))}
+        for s in reg["sources"]
+    }
+    filings = movements.extract_edgar_items(
+        conn, movement_sources, now_ts() - years * 365 * 86400)
+    log(f"  抽取近 {years} 年 {filings['filings_scanned']} 份申报 → "
+        f"{filings['candidates']} 条候选")
+    auto = movements.autocomplete_13f(conn, limit=10_000)
+    log(f"  13F 持仓自动补全并发布 {auto['published']}/{auto['scanned']} 份")
+    return {"sources": len(srcs), "pages": pages_done, "n_new": total_new,
+            "candidates": filings["candidates"], "published": auto["published"]}
+
+
 def run(conn, reg: dict, profile: dict, *, use_llm=False, only=None,
         window_h=None, log=print) -> dict:
     run_id = store.start_run(conn)
@@ -224,6 +285,20 @@ def run(conn, reg: dict, profile: dict, *, use_llm=False, only=None,
                 conn, movement_sources, now_ts() - (window_h or config.CLUSTER_WINDOW_H) * 3600)
             log(f"  扫描 {movement['clusters_scanned']} 个事件簇，形成/更新 "
                 f"{movement['candidates']} 条行动候选（默认不公开）")
+            # 监管申报走独立窗口：稀疏事件用新闻的 72h 窗口会全部漏掉
+            filings = movements.extract_edgar_items(
+                conn, movement_sources, now_ts() - config.EDGAR_WINDOW_DAYS * 86400)
+            movement["filings_scanned"] = filings["filings_scanned"]
+            movement["filing_candidates"] = filings["candidates"]
+            movement["candidates"] += filings["candidates"]
+            log(f"  扫描 {filings['filings_scanned']} 份监管申报（近 "
+                f"{config.EDGAR_WINDOW_DAYS} 天），形成/更新 {filings['candidates']} 条申报候选")
+            # 13F 持仓附表是结构化 XML，对象与金额可从一次源确定性推导 → 自动过门禁发布
+            auto = movements.autocomplete_13f(conn, limit=config.EDGAR_13F_MAX_PER_RUN)
+            movement["filings_autopublished"] = auto["published"]
+            if auto["scanned"]:
+                log(f"  13F 持仓自动补全 {auto['published']}/{auto['scanned']} 份已发布"
+                    + (f"，{auto['failed']} 份附表未取到（保留为草稿）" if auto["failed"] else ""))
         except Exception as exc:
             # Experimental intelligence extraction must not take down the core news feed.
             movement = {"clusters_scanned": 0, "candidates": 0,

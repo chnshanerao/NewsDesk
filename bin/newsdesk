@@ -53,6 +53,16 @@ def cmd_run(args):
           f" / LLM {r['llm']['ok']} 条 / 耗时 {r['elapsed']}s")
 
 
+def cmd_backfill_filings(args):
+    reg, profile, conn = _ctx(args)
+    only = args.source.split(",") if args.source else None
+    print(f"▸ 回填 SEC 申报（每源翻 {args.pages} 页，串行节流）")
+    r = pipeline.backfill_filings(conn, reg, pages=args.pages, years=args.years,
+                                  only=only)
+    print(f"\n完成：{r['sources']} 个申报源 / {r['pages']} 页 / 新增 {r['n_new']} 份"
+          f" / 候选 {r['candidates']} 条 / 13F 自动发布 {r['published']} 条")
+
+
 def cmd_top(args):
     reg, profile, conn = _ctx(args)
     print(digest.terminal_view(conn, profile, limit=args.n, min_cred=args.min_cred))
@@ -289,6 +299,12 @@ def main():
     p.add_argument("-n", type=int, default=25)
     p.add_argument("--min-cred", dest="min_cred", type=float, default=0.0)
     p.set_defaults(func=cmd_top)
+
+    p = sub.add_parser("backfill-filings", help="回填历史 SEC 申报（补动向账本的长期趋势）")
+    p.add_argument("--pages", type=int, default=4, help="每源往回翻几页（每页 100 份）")
+    p.add_argument("--years", type=int, default=5, help="抽取多少年内的申报")
+    p.add_argument("-s", "--source", help="只回填指定源，逗号分隔")
+    p.set_defaults(func=cmd_backfill_filings)
 
     p = sub.add_parser("digest", help="Markdown 简报")
     p.add_argument("--hours", type=int, default=24)

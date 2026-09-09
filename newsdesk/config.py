@@ -31,7 +31,16 @@ USER_AGENT = os.getenv(
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0 Safari/537.36 newsdesk/1.0",
 )
+# SEC EDGAR 的公平访问策略要求 User-Agent 声明可识别身份+联系方式，
+# 否则一律返回 403（实测浏览器 UA 被拒）。这不是密钥，生产用 env 覆盖成真实联系人。
+SEC_UA = os.getenv("NEWSDESK_SEC_UA", "NEWSDESK filings monitor (contact ops@newsdesk.local)")
+# 监管申报的抽取窗口。申报是稀疏事件（8-K 约每月、13F 每季度），不能用新闻的
+# CLUSTER_WINDOW_H（72h）去卡，否则一份都进不来。默认按年，看得见长期布局。
+EDGAR_WINDOW_DAYS = int(os.getenv("NEWSDESK_EDGAR_WINDOW_DAYS", "365"))
+# 每轮最多自动解析多少份 13F 持仓附表（每份要 2 次 SEC 请求，限速 0.4s/次）。
+EDGAR_13F_MAX_PER_RUN = int(os.getenv("NEWSDESK_EDGAR_13F_MAX_PER_RUN", "12"))
 HTTP_TIMEOUT = int(os.getenv("NEWSDESK_TIMEOUT", "20"))
+SQLITE_BUSY_TIMEOUT = int(os.getenv("NEWSDESK_SQLITE_BUSY_TIMEOUT", "120"))
 FETCH_WORKERS = int(os.getenv("NEWSDESK_WORKERS", "6"))
 
 # ---- 正文预览（详情页『主要内容』）----
@@ -116,6 +125,9 @@ def load_sources(path: Path | None = None) -> dict:
     }
     for source in reg["sources"]:
         source["source_role"] = source_role(source)
+        # SEC EDGAR 需要合规 UA，否则 403。按源注入，不影响其他信源。
+        if "sec.gov" in source.get("url", ""):
+            source.setdefault("http_headers", {}).setdefault("User-Agent", SEC_UA)
     return reg
 
 

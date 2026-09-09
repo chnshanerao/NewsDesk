@@ -2,13 +2,25 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from newsdesk import movements, store
+from newsdesk import edgar, movements, store
 
 
 SOURCE_META = {
     "wire_a": {"owner": "wire-a", "source_role": "wire"},
     "paper_b": {"owner": "paper-b", "source_role": "reporting"},
+}
+
+EDGAR_META = {
+    "sec_nvidia": {"owner": "sec_nvidia", "source_role": "regulatory_filing",
+                   "edgar_form": "8-K", "filer_org": "NVIDIA",
+                   "person_id": "person_jensen_huang",
+                   "actor_kind_default": "controlled_institution"},
+    "sec_scion_13f": {"owner": "sec_scion_13f", "source_role": "regulatory_filing",
+                      "edgar_form": "13F-HR", "filer_org": "Scion Asset Management",
+                      "person_id": "person_michael_burry",
+                      "actor_kind_default": "controlled_institution"},
 }
 
 
@@ -39,6 +51,162 @@ class MovementLedgerTests(unittest.TestCase):
             [(iid, sid, source, source, title, summary, url, cid)
              for iid, sid, source, title, summary, url in rows])
         self.conn.commit()
+
+    def _edgar_cluster(self, cid, source_id, title, summary, url, published_ts=1000):
+        self.conn.execute(
+            "INSERT INTO clusters(id,headline,headline_src,url,first_ts,last_ts,n_items,n_groups,"
+            "best_tier,topics,cred,relevance,rank) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (cid, title, source_id, url, published_ts, published_ts + 100, 1, 1, 0, "[]", 80, .8, 70))
+        self.conn.execute(
+            "INSERT INTO items(id,source_id,source_name,tier,grp,title,summary,url,lang,"
+            "published_ts,fetched_ts,cluster_id) VALUES(?,?,?,0,?,?,?,?, 'en',?,?,?)",
+            (f"{cid}-a", source_id, source_id, source_id, title, summary, url,
+             published_ts, published_ts + 100, cid))
+        self.conn.commit()
+
+    def test_edgar_8k_makes_draft_that_cannot_publish_without_object(self):
+        self._edgar_cluster(
+            "c-edgar-8k", "sec_nvidia", "NVIDIA 8-K · 2026-08-01 · 0001045810-26-000123",
+            "Filed: 2026-08-01 AccNo: 0001045810-26-000123 - Item 2.01: Completion of "
+            "Acquisition or Disposition of Assets",
+            "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001045810")
+        result = movements.extract_edgar_items(self.conn, EDGAR_META, 0)
+        self.assertEqual(result["candidates"], 1)
+        event = movements.list_events(self.conn, workflow="all", verification="all")["items"][0]
+        self.assertEqual(event["extraction_method"], "edgar-v1")
+        self.assertEqual(event["action_type"], "acquisition")
+        self.assertEqual(event["workflow_status"], "draft")
+        self.assertEqual(event["persons"][0]["id"], "person_jensen_huang")
+        self.assertEqual(event["evidence"][0]["source_role"], "regulatory_filing")
+        self.assertEqual(event["object_text"], "")
+        # 缺 object_text，直接发布必被门禁拦下
+        with self.assertRaisesRegex(ValueError, "object_text required"):
+            movements.review_event(self.conn, event["id"], verification_status="verified",
+                                   workflow_status="published")
+
+    def test_edgar_complete_and_publish_passes_gate(self):
+        self._edgar_cluster(
+            "c-edgar-pub", "sec_nvidia", "NVIDIA 8-K · 2026-08-01 · 0001045810-26-000123",
+            "Filed: 2026-08-01 AccNo: 0001045810-26-000123 - Item 2.01: Completion of "
+            "Acquisition or Disposition of Assets",
+            "https://www.sec.gov/filing/000123")
+        movements.extract_edgar_items(self.conn, EDGAR_META, 0)
+        mid = self.conn.execute("SELECT id FROM movement_events").fetchone()[0]
+        event = movements.complete_and_publish(
+            self.conn, mid, object_text="Run:ai (AI 编排软件公司)",
+            amount_value_text="$700 million", reviewer="tester")
+        self.assertEqual(event["workflow_status"], "published")
+        self.assertEqual(event["verification_status"], "verified")
+        self.assertEqual(event["object_text"], "Run:ai (AI 编排软件公司)")
+        self.assertEqual(event["amount_currency"], "USD")
+        self.assertIn("object", event["fact_citations"])
+        self.assertIn("amount", event["fact_citations"])
+        self.assertEqual(movements.list_events(self.conn)["total"], 1)
+
+    def test_edgar_13f_attributes_to_fund_beneficiary(self):
+        self._edgar_cluster(
+            "c-edgar-13f", "sec_scion_13f", "Scion Asset Management 13F-HR · 2026-08-14 · 0001649339-26-000005",
+            "Filed: 2026-08-14 AccNo: 0001649339-26-000005",
+            "https://www.sec.gov/filing/13f-005")
+        result = movements.extract_edgar_items(self.conn, EDGAR_META, 0)
+        self.assertEqual(result["candidates"], 1)
+        event = movements.list_events(self.conn, workflow="all", verification="all")["items"][0]
+        self.assertEqual(event["action_type"], "capital_allocate")
+        self.assertEqual(event["verb_code"], "portfolio_report")
+        self.assertEqual(event["persons"][0]["id"], "person_michael_burry")
+        # 补对象即可发布（金额可选，13F 无单一金额）
+        published = movements.complete_and_publish(
+            self.conn, event["id"], object_text="美股组合季度持仓（详见 13F 表）", reviewer="tester")
+        self.assertEqual(published["workflow_status"], "published")
+        self.assertNotIn("amount", published["fact_citations"])
+
+    def test_13f_information_table_aggregates_repeated_issuer_rows(self):
+        # 同一发行人常被拆成多行（不同管理人/投票权口径），必须合并后再排名
+        xml = """<informationTable>
+          <infoTable><nameOfIssuer>APPLE INC</nameOfIssuer><value>600</value>
+            <shrsOrPrnAmt><sshPrnamt>6</sshPrnamt></shrsOrPrnAmt></infoTable>
+          <infoTable><nameOfIssuer>APPLE INC</nameOfIssuer><value>400</value>
+            <shrsOrPrnAmt><sshPrnamt>4</sshPrnamt></shrsOrPrnAmt></infoTable>
+          <infoTable><nameOfIssuer>COCA COLA CO</nameOfIssuer><value>500</value>
+            <shrsOrPrnAmt><sshPrnamt>5</sshPrnamt></shrsOrPrnAmt></infoTable>
+        </informationTable>"""
+        table = edgar.parse_information_table(xml)
+        self.assertEqual(table["n_rows"], 3)
+        self.assertEqual(table["n_issuers"], 2)
+        self.assertEqual(table["total_value"], 1500)
+        self.assertEqual(table["holdings"][0], {"issuer": "APPLE INC", "value": 1000, "shares": 10})
+
+    def test_13f_values_reported_in_thousands_are_rescaled(self):
+        # 大量申报人沿用旧的千美元惯例，附表里没有单位字段，只能用每股单价反推
+        def table(value, shares):
+            return (f"<informationTable><infoTable><nameOfIssuer>APPLE INC</nameOfIssuer>"
+                    f"<value>{value}</value><shrsOrPrnAmt><sshPrnamt>{shares}</sshPrnamt>"
+                    f"<sshPrnamtType>SH</sshPrnamtType></shrsOrPrnAmt></infoTable></informationTable>")
+        # 每股 $0.29 不可能是股价 → 实为千美元
+        thousands = edgar.parse_information_table(table(65950296, 227917808))
+        self.assertEqual(thousands["unit_scale"], 1000)
+        self.assertEqual(thousands["total_value"], 65950296000)
+        # 每股 $289 是正常股价 → 已是整美元，不得再乘 1000
+        dollars = edgar.parse_information_table(table(65950296923, 227917808))
+        self.assertEqual(dollars["unit_scale"], 1)
+        self.assertEqual(dollars["total_value"], 65950296923)
+        # 没有股数就无从反推，一律不缩放（宁可少乘，不可凭空放大三个数量级）
+        self.assertEqual(edgar.parse_information_table(table(1000, 0))["unit_scale"], 1)
+
+    def _pending_13f(self, cid="c-13f-auto", url="https://www.sec.gov/filing/13f-auto"):
+        self._edgar_cluster(
+            cid, "sec_scion_13f",
+            "Scion Asset Management 13F-HR · 2026-08-14 · 0001649339-26-000009",
+            "Filed: 2026-08-14 AccNo: 0001649339-26-000009", url)
+        movements.extract_edgar_items(self.conn, EDGAR_META, 0)
+        return self.conn.execute("SELECT id FROM movement_events").fetchone()[0]
+
+    def test_13f_autocomplete_publishes_object_derived_from_filing(self):
+        movement_id = self._pending_13f()
+        summary = {"object_text": "2 个头寸；前 2 大持仓：APPLE INC $1bn、COCA COLA CO $500m（占组合 100%）",
+                   "amount_value_text": "$1.50 billion",
+                   "table_url": "https://www.sec.gov/Archives/edgar/data/1/2/3.xml"}
+        with mock.patch.object(edgar, "holdings_from_filing", return_value=summary):
+            result = movements.autocomplete_13f(self.conn)
+        self.assertEqual((result["scanned"], result["published"], result["failed"]), (1, 1, 0))
+        event = movements.list_events(self.conn)["items"][0]
+        self.assertEqual(event["id"], movement_id)
+        self.assertEqual(event["workflow_status"], "published")
+        # 自动补全必须与人工补全在审计上可区分
+        self.assertEqual(event["extraction_method"], "edgar-13f-v1")
+        self.assertEqual(event["object_text"], summary["object_text"])
+        self.assertEqual(event["amount_currency"], "USD")
+        self.assertIn("object", event["fact_citations"])
+        self.assertIn("amount", event["fact_citations"])
+        self.assertEqual(self.conn.execute(
+            "SELECT amount_usd_text FROM movement_events WHERE id=?",
+            (movement_id,)).fetchone()[0], "1500000000.0")
+        # 已发布后不再被重复处理
+        with mock.patch.object(edgar, "holdings_from_filing", return_value=summary) as fetch_again:
+            self.assertEqual(movements.autocomplete_13f(self.conn)["scanned"], 0)
+            fetch_again.assert_not_called()
+
+    def test_13f_stays_draft_when_holdings_table_unavailable(self):
+        movement_id = self._pending_13f()
+        with mock.patch.object(edgar, "holdings_from_filing", return_value=None):
+            result = movements.autocomplete_13f(self.conn)
+        self.assertEqual((result["published"], result["failed"]), (0, 1))
+        self.assertEqual(movements.list_events(self.conn)["total"], 0)
+        row = self.conn.execute(
+            "SELECT workflow_status,extraction_method,object_text FROM movement_events WHERE id=?",
+            (movement_id,)).fetchone()
+        # 取不到附表就留在分诊队列等人工，绝不编造对象
+        self.assertEqual((row["workflow_status"], row["extraction_method"], row["object_text"]),
+                         ("draft", "edgar-v1", ""))
+
+    def test_edgar_8k_without_mapped_item_is_skipped(self):
+        self._edgar_cluster(
+            "c-edgar-skip", "sec_nvidia", "NVIDIA 8-K · 2026-08-02 · 0001045810-26-000200",
+            "Filed: 2026-08-02 AccNo: 0001045810-26-000200 - Item 7.01: Regulation FD Disclosure",
+            "https://www.sec.gov/filing/000200")
+        result = movements.extract_edgar_items(self.conn, EDGAR_META, 0)
+        self.assertEqual(result["candidates"], 0)
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM movement_events").fetchone()[0], 0)
 
     def test_schema_v12_is_idempotent_and_persons_are_separate(self):
         store.init(self.conn)

@@ -423,7 +423,9 @@ MIGRATIONS = (
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
     db_path = path or config.DB_PATH
-    conn = sqlite3.connect(db_path, timeout=30)
+    # 服务端自动刷新与命令行任务会同时写库：WAL 下写者要排队，等待时间必须够长，
+    # 否则长事务（重聚类）跑着的时候另一边直接 "database is locked" 丢数据。
+    conn = sqlite3.connect(db_path, timeout=config.SQLITE_BUSY_TIMEOUT)
     try:
         Path(db_path).chmod(0o600)
     except OSError:

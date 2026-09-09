@@ -42,14 +42,17 @@ def _cdata(s: str) -> str:
     return m.group(1) if m else s
 
 
-def http_get(url: str, timeout: int | None = None) -> bytes:
-    req = urllib.request.Request(url, headers={
+def http_get(url: str, timeout: int | None = None, headers: dict | None = None) -> bytes:
+    hdrs = {
         "User-Agent": config.USER_AGENT,
         "Accept": "application/rss+xml, application/xml, application/json, text/html;q=0.9,*/*;q=0.8",
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         "Accept-Encoding": "gzip, deflate",
         "Connection": "close",
-    })
+    }
+    if headers:  # 按源覆盖（如 SEC EDGAR 要求合规 User-Agent）
+        hdrs.update(headers)
+    req = urllib.request.Request(url, headers=hdrs)
     with urllib.request.urlopen(req, timeout=timeout or config.HTTP_TIMEOUT) as r:
         raw = r.read()
         enc = (r.headers.get("Content-Encoding") or "").lower()
@@ -189,6 +192,27 @@ def parse_html(text: str, src: dict) -> list[dict]:
     return out
 
 
+_EDGAR_ACCNO = re.compile(r"AccNo:\s*([\d-]+)", re.I)
+_EDGAR_FILED = re.compile(r"Filed:\s*([\d-]+)", re.I)
+
+
+def _edgar_enrich(src: dict, p: dict) -> dict:
+    """EDGAR atom 所有条目标题都是 "8-K - Current report"，会被聚类跨公司合并成巨簇。
+    用『公司 表单 · 申报日 · 登记号』重写标题：既唯一（聚类分得开），又可读（新闻流/分诊有意义）。
+    """
+    summary = p.get("summary", "")
+    accno = (_EDGAR_ACCNO.search(summary) or [None, ""])[1] if _EDGAR_ACCNO.search(summary) else ""
+    filed = (_EDGAR_FILED.search(summary) or [None, ""])[1] if _EDGAR_FILED.search(summary) else ""
+    org = src.get("filer_org", "")
+    form = src.get("edgar_form", "")
+    label = " · ".join(x for x in (f"{org} {form}".strip(), filed, accno) if x)
+    if label:
+        p["title"] = label
+    if accno:
+        p["native_id"] = accno
+    return p
+
+
 def parse(text: str, src: dict) -> list[dict]:
     kind = src.get("kind", "rss")
     if kind in ("json", "jsonp"):
@@ -214,8 +238,11 @@ def fetch_source(src: dict, reg: dict) -> dict:
         "last_error": None, "items": [], "n_items": 0,
     }
     try:
-        raw = http_get(src["url"])
+        raw = http_get(src["url"], timeout=src.get("http_timeout"),
+                       headers=src.get("http_headers"))
         parsed = parse(decode(raw), src)
+        if src.get("edgar_form"):  # 把 EDGAR 泛化标题富化成唯一可读标题（防跨公司合并）
+            parsed = [_edgar_enrich(src, p) for p in parsed]
         max_items = int(src.get("max_items", 0) or 0)
         if max_items > 0:
             parsed = parsed[:max_items]
@@ -224,8 +251,12 @@ def fetch_source(src: dict, reg: dict) -> dict:
         items = []
         undated = 0
         future_clamped = 0
+        # 默认按标题去重（同源重复稿不虚增印证）。但 EDGAR 这类源所有条目标题相同
+        # （"8-K - Current report"），需按 item_key 指定的字段（url）区分每份申报。
+        key_field = src.get("item_key")
         for p in parsed:
-            iid = item_id(src["id"], p["title"])
+            identity = (p.get(key_field) or p["title"]) if key_field else p["title"]
+            iid = item_id(src["id"], identity)
             if iid in seen:
                 continue
             seen.add(iid)
