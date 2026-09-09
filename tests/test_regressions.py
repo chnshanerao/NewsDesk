@@ -283,6 +283,8 @@ class ApiLanguageFilterTests(unittest.TestCase):
             body = response.read().decode("utf-8")
         self.assertIn("看他们做什么", body)
         self.assertIn("言论权重 0", body)
+        self.assertIn('src="/static/movements.js"', body)
+        self.assertNotIn("<script>\n", body)
         with urllib.request.urlopen(
                 f"http://127.0.0.1:{port}/api/persons", timeout=3) as response:
             payload = json.loads(response.read().decode("utf-8"))
