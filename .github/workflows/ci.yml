@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile Python
+        run: python -m compileall -q newsdesk tests
+      - name: Validate browser JavaScript
+        run: node --check web/app.js
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+      - name: Enforce clustering quality gate
+        run: ./bin/newsdesk evaluate-clustering --strict
+      - name: Enforce local search latency gate
+        run: ./bin/newsdesk benchmark --iterations 10 --strict
+      - name: Exercise migration and recovery
+        run: |
+          ./bin/newsdesk schema
+          ./bin/newsdesk backup -o /tmp/newsdesk-ci.db
+          ./bin/newsdesk recovery-drill /tmp/newsdesk-ci.db
