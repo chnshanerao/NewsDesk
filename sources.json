@@ -411,12 +411,49 @@
       "region": "global",
       "source_type": "institution",
       "source_role": "official",
-      "kind": "rss",
-      "url": "https://www.who.int/rss-feeds/news-english.xml",
+      "kind": "json",
+      "url": "https://www.who.int/api/news/newsitems?$orderby=PublicationDateAndTime%20desc&$top=25",
+      "json": {
+        "items_path": "value",
+        "title": "Title",
+        "published": "PublicationDateAndTime",
+        "id": "Id",
+        "url_template": "https://www.who.int/news/item{ItemDefaultUrl}"
+      },
       "lang": "en",
+      "max_items": 25,
+      "freshness_hours": 168,
       "topics": ["society", "risk", "policy"],
       "enabled": true,
-      "note": "一次信源：世界卫生组织公开声明与卫生事件"
+      "note": "一次信源：世卫组织新闻。原 RSS（rss-feeds/news-english.xml）能抓能解析但最新一条已停在 2026-02（实测 198 天），改走 OData 接口 —— 停更的是 feed 不是机构，实测接口最新一条 37h。$orderby 必须给，接口默认按时间正序返回 2006 年的旧闻"
+    },
+    {
+      "id": "who_don",
+      "name": "WHO · Disease Outbreak News",
+      "tier": 0,
+      "group": "who",
+      "owner": "who",
+      "country": "INT",
+      "region": "global",
+      "source_type": "institution",
+      "source_role": "official",
+      "kind": "json",
+      "url": "https://www.who.int/api/news/diseaseoutbreaknews?$orderby=PublicationDateAndTime%20desc&$top=20",
+      "json": {
+        "items_path": "value",
+        "title": "Title",
+        "summary": "Summary",
+        "published": "PublicationDateAndTime",
+        "id": "Id",
+        "url_template": "https://www.who.int/emergencies/disease-outbreak-news/item{ItemDefaultUrl}"
+      },
+      "lang": "en",
+      "max_items": 20,
+      "freshness_hours": 336,
+      "item_key": "url",
+      "topics": ["society", "risk", "policy"],
+      "enabled": true,
+      "note": "一次信源：疫情通报，跨境公共卫生事件的原始发布口径。与 who_news 同 group —— 同一机构的两个栏目不算交叉印证。item_key 走 url：同一疫情的连续通报（DON615/616/617）标题完全相同，按标题去重会把 20 条压成 8 条，丢掉最新进展"
     },
     {
       "id": "bis_press",
@@ -431,9 +468,10 @@
       "kind": "rss",
       "url": "https://www.bis.org/doclist/all_pressrels.rss",
       "lang": "en",
+      "freshness_hours": 336,
       "topics": ["macro", "market", "policy"],
       "enabled": true,
-      "note": "一次信源：国际清算银行政策与研究发布"
+      "note": "一次信源：国际清算银行政策与研究发布。实测最新一条 75h —— 恰好落在默认 72h 窗外就被判 degraded，其真实节奏是周级，freshness 放到 336h"
     },
     {
       "id": "openai_news",
@@ -833,7 +871,7 @@
       "source_type": "company_primary", "source_role": "official", "kind": "rss",
       "url": "https://wandb.ai/fully-connected/rss.xml", "lang": "en", "max_items": 30,
       "freshness_hours": 720, "topics": ["ai_research", "ai_models", "ai_industry", "tech"],
-      "enabled": true, "note": "AI 一次信源：模型实验、评测与 MLOps 工程发布"
+      "enabled": false, "note": "AI 一次信源：模型实验、评测与 MLOps 工程发布。停用 —— feed 返回 200 但 channel 里零条目（739 字节空壳），W&B 并入 CoreWeave 后没再发；恢复出条目前不计入一次源门禁"
     },
     {
       "id": "uk_ai_security_institute", "name": "UK AI Security Institute", "tier": 0,
@@ -845,11 +883,11 @@
     },
     {
       "id": "tensorflow_blog", "name": "TensorFlow · Blog", "tier": 0,
-      "group": "tensorflow", "owner": "google", "country": "US", "region": "global",
+      "group": "google", "owner": "alphabet", "country": "US", "region": "global",
       "source_type": "project_primary", "source_role": "official", "kind": "rss",
       "url": "https://blog.tensorflow.org/feeds/posts/default?alt=rss", "lang": "en", "max_items": 30,
       "freshness_hours": 720, "topics": ["ai_research", "ai_models", "ai_open_source", "tech"],
-      "enabled": true, "note": "AI 一次信源：TensorFlow 版本、研究与生态发布"
+      "enabled": false, "note": "AI 一次信源：TensorFlow 版本、研究与生态发布。停用 —— 实测最新一条 387 天前，博客已实质停更；group/owner 一并并入 alphabet（原先 group=tensorflow / owner=google 与 google_ai_blog 的 alphabet 是同一家公司的两个标签，会把集中度算低）"
     },
     {
       "id": "mozilla_ai_blog", "name": "Mozilla.ai · Blog", "tier": 0,
