@@ -194,13 +194,28 @@ def _amount(text: str) -> dict:
             "usd": value if currency == "USD" else None}
 
 
-def _materiality(action_type: str, amount_usd: float | None) -> float:
+def _materiality(action_type: str, amount_usd: float | None, *,
+                 signal_prior: float | None = None,
+                 promotional_intensity: float = 0.0) -> float:
+    """行动的重要性。给了人物先验就按人物调权，否则只看行动本身。
+
+    调权是乘性的，且有 .05 下界 —— 降权不等于排除。宣传倾向高的人物
+    （Musk promo=.92）日常动作会被压到高信噪人物（Buffett promo=.05）之下，
+    但他一笔百亿级收购仍然压过后者的日常动作：金额仍是主导项，宣传只是折价。
+    阈值式过滤会把这类事件整条抹掉，所以这里刻意不做阈值。
+    """
     if amount_usd:
-        if amount_usd >= 10_000_000_000: return 1.0
-        if amount_usd >= 1_000_000_000: return .9
-        if amount_usd >= 100_000_000: return .78
-        if amount_usd >= 10_000_000: return .62
-    return .68 if action_type in {"acquisition", "build_or_expand"} else .52
+        if amount_usd >= 10_000_000_000: base = 1.0
+        elif amount_usd >= 1_000_000_000: base = .9
+        elif amount_usd >= 100_000_000: base = .78
+        elif amount_usd >= 10_000_000: base = .62
+        else: base = .68 if action_type in {"acquisition", "build_or_expand"} else .52
+    else:
+        base = .68 if action_type in {"acquisition", "build_or_expand"} else .52
+    if signal_prior is None:
+        return base
+    adjusted = base * (.6 + .4 * signal_prior) * (1 - .35 * promotional_intensity)
+    return round(min(1.0, max(.05, adjusted)), 4)
 
 
 def _object_after_action(sentence: str, action_match) -> tuple[str, str]:
@@ -328,7 +343,10 @@ def extract_cluster(conn, cluster_id: str, source_meta: dict[str, dict]) -> list
              cluster["last_ts"], amount["text"], amount["currency"],
              str(amount["usd"]) if amount["usd"] is not None else None, "reported_amount",
              "[]", verification, "draft", fact_confidence,
-             _materiality(action_type, amount["usd"]), person.get("promotional_intensity", 0),
+             _materiality(action_type, amount["usd"],
+                          signal_prior=person.get("signal_prior"),
+                          promotional_intensity=person.get("promotional_intensity", 0)),
+             person.get("promotional_intensity", 0),
              observed, boundary, json.dumps(["exact execution date may differ from disclosure date"], ensure_ascii=False),
              "rules-v1", dedupe, now, now, "completed"))
         conn.execute("DELETE FROM movement_persons WHERE movement_id=?", (movement_id,))
@@ -397,6 +415,10 @@ def _edgar_upsert(conn, item, meta: dict, now: int) -> str | None:
     filer_org = meta.get("filer_org") or meta.get("name") or item["source_name"]
     if not person_id:
         return None
+    # 申报侧的 meta 来自 sources.json，不带人物先验，只能回查 persons 表。
+    weights = conn.execute(
+        "SELECT signal_prior,promotional_intensity FROM persons WHERE id=?",
+        (person_id,)).fetchone()
     resolved = _edgar_action(meta.get("edgar_form", ""), item["summary"] or "")
     if not resolved:
         return None
@@ -429,7 +451,11 @@ def _edgar_upsert(conn, item, meta: dict, now: int) -> str | None:
          None, "day",
          item["published_ts"], None, None, None, "filing_disclosed",
          "[]", "candidate", "draft", .7,
-         _materiality(action_type, None), meta.get("promotional_intensity", 0),
+         _materiality(action_type, None,
+                      signal_prior=weights["signal_prior"] if weights else None,
+                      promotional_intensity=(weights["promotional_intensity"] if weights
+                                             else meta.get("promotional_intensity", 0))),
+         weights["promotional_intensity"] if weights else meta.get("promotional_intensity", 0),
          observed, boundary,
          json.dumps(["申报对象与金额待人工按 SEC 正文补全", "披露日可能不同于实际执行日"], ensure_ascii=False),
          "edgar-v1", dedupe, now, now, "completed"))

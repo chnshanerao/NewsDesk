@@ -358,6 +358,22 @@ class MovementLedgerTests(unittest.TestCase):
         self.assertEqual(event["actor_kind"], "personal")
         self.assertEqual(event["persons"][0]["role"], "beneficial_owner")
 
+    def test_promotional_actor_is_downweighted_but_never_excluded(self):
+        """降权不等于排除：宣传倾向高的人物日常动作要落到高信噪人物之下，
+        但其大额动作仍须压过后者的日常动作 —— 金额保持主导项。"""
+        musk = dict(signal_prior=.63, promotional_intensity=.92)
+        buffett = dict(signal_prior=.95, promotional_intensity=.05)
+        musk_routine = movements._materiality("other", None, **musk)
+        buffett_routine = movements._materiality("other", None, **buffett)
+        musk_large = movements._materiality("acquisition", 2e10, **musk)
+        self.assertLess(musk_routine, buffett_routine)
+        self.assertGreater(musk_large, buffett_routine)
+        self.assertGreater(musk_routine, 0)          # 永不归零
+        # 不给人物先验时必须与调权前完全一致，避免影响无人物归属的记录
+        self.assertEqual(movements._materiality("other", None), .52)
+        self.assertEqual(movements._materiality("acquisition", None), .68)
+        self.assertEqual(movements._materiality("other", 2e10), 1.0)
+
     def test_speech_and_plans_do_not_become_movements(self):
         self._cluster("c-speech", "Elon Musk says AI will change every industry")
         self._cluster("c-plan", "Mark Zuckerberg plans to invest $60 billion in AI")
