@@ -2,18 +2,33 @@
   "dataset_version": "claim-relations-v1",
   "seed": 20260906,
   "pairs": 300,
-  "snapshot_hash": "73474ad3c89cc2bdad243841d7b3f163b2861de6bc33ab74e5f44cc9be6fdff6",
-  "predictions_hash": "1de624e88bf5f5faad637ec18f4763c136f21a7a353115d96c7e5d8076e92b9a",
+  "snapshot_hash": "48c7d05a4c0df26224da1184a6b31b2c83f2752aa939f7b420fdfa21e6d8ef61",
+  "predictions_hash": "bfcea2f326d5db6f63ec6fc747d19df5d0f96075cb6ee0d3114c2592c353b9b6",
   "labels": [
     "refute",
     "support",
     "unknown"
   ],
   "relation_distribution": {
-    "refute": 100,
-    "support": 100,
-    "unknown": 100
+    "refute": 0,
+    "support": 141,
+    "unknown": 159
   },
-  "ready_for_annotation": true,
+  "class_shortfall": {
+    "refute": 100
+  },
+  "tuning_disclosure": {
+    "refute_rules_derived_from_this_corpus": true,
+    "classes_not_tuned": [
+      "support",
+      "unknown"
+    ],
+    "note": "refute precision on this set is optimistic; treat out-of-sample data as the real test"
+  },
+  "ready_for_annotation": false,
+  "natural_distribution_ready": true,
+  "classes_absent": [
+    "refute"
+  ],
   "human_adjudicated": false
 }

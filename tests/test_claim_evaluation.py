@@ -31,6 +31,29 @@ class ClaimEvaluationTests(unittest.TestCase):
                 "pair_id": x["pair_id"], "annotator": annotator, "label": "support"}) + "\n"
                 for x in pairs), encoding="utf-8")
 
+    def test_absent_class_is_carried_into_the_verdict(self):
+        """语料里没有 refute 就不能宣称验收了 refute。"""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); self._dataset(root)
+            manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+            manifest.update({"ready_for_annotation": False,
+                             "natural_distribution_ready": True,
+                             "classes_absent": ["refute"]})
+            (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            result = claim_evaluation.validate_dataset(root)
+            self.assertTrue(result["valid"])
+            self.assertEqual(result["classes_unmeasured"], ["refute"])
+            self.assertIn("support/unknown boundary only", result["coverage"])
+
+    def test_unbalanced_sample_without_natural_flag_is_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); self._dataset(root)
+            manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+            manifest["ready_for_annotation"] = False
+            (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "not balanced enough"):
+                claim_evaluation.validate_dataset(root)
+
     def test_three_person_adjudicated_dataset_is_verified(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td); self._dataset(root)

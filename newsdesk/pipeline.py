@@ -10,6 +10,57 @@ from . import (alerting, article, config, credibility, entities, evidence, fetch
 from .normalize import now_ts
 
 
+def refresh_relations(conn) -> dict:
+    """用当前分类器重算已入库的 claim–证据关系，不重新聚类、不改引号。
+
+    关系是判断，引号是证据。分类器改版后，库里存的关系仍是旧版本的结论：本库
+    54 条 refute 全部出自「同一系列的不同期次」误判（国债第五十七期对第五十八期、
+    1 月 PPI 对 5 月 PPI）。跑一遍 `score` 也能刷新，但那会顺带按当前窗口重新聚类
+    ——那是另一件事，且窗口外的历史簇根本不会被碰到。这里只刷判断。
+
+    `claims.status` 与 `independent_groups` 由关系推出，必须同步更新，否则库里会留下
+    「状态 disputed 但证据行里一条 refute 都没有」的自相矛盾。判不出关系的行记为
+    unknown 而不是删除：那条引号是入库时审计过的证据，不因判断变化而失效。
+    """
+    rows = [dict(x) for x in conn.execute(
+        "SELECT ce.claim_id,ce.item_id,ce.relation,ce.source_role,ce.source_group,"
+        "ce.source_id,c.text AS claim_text,i.title,i.summary,i.published_ts,i.fetched_ts "
+        "FROM claim_evidence ce JOIN claims c ON c.id=ce.claim_id "
+        "JOIN items i ON i.id=ce.item_id")]
+    before = {}
+    after = {}
+    changed = []
+    cards: dict[str, list[dict]] = {}
+    for row in rows:
+        old = row["relation"]
+        new = evidence._relation(row["claim_text"], row) or "unknown"
+        before[old] = before.get(old, 0) + 1
+        after[new] = after.get(new, 0) + 1
+        cards.setdefault(row["claim_id"], []).append(
+            {"group": row["source_group"], "source_id": row["source_id"],
+             "source_role": row["source_role"], "relation": new})
+        if new != old:
+            changed.append((new, row["claim_id"], row["item_id"]))
+    conn.executemany("UPDATE claim_evidence SET relation=?,relation_method=? "
+                     "WHERE claim_id=? AND item_id=?",
+                     [(new, "heuristic-relation-v2", cid, iid)
+                      for new, cid, iid in changed])
+    status_changed = 0
+    for claim_id, refs in cards.items():
+        card = evidence.summarize(refs)
+        cursor = conn.execute(
+            "UPDATE claims SET status=?,independent_groups=?,groups_json=?,"
+            "source_roles_json=?,updated_ts=? WHERE id=? AND "
+            "(status!=? OR independent_groups!=?)",
+            (card["status"], card["independent_groups"], json.dumps(card["groups"]),
+             json.dumps(card["source_roles"]), int(time.time()), claim_id,
+             card["status"], card["independent_groups"]))
+        status_changed += cursor.rowcount
+    conn.commit()
+    return {"evidence_rows": len(rows), "relations_changed": len(changed),
+            "claims_restated": status_changed, "before": before, "after": after}
+
+
 def _health_layers(res: dict, src: dict, now: int) -> dict:
     """Separate reachability, parsing and freshness into explicit states."""
     transport = "ok" if res.get("ok") else "error"

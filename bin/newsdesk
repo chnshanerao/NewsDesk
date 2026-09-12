@@ -53,6 +53,14 @@ def cmd_run(args):
           f" / LLM {r['llm']['ok']} 条 / 耗时 {r['elapsed']}s")
 
 
+def cmd_refresh_relations(args):
+    reg, profile, conn = _ctx(args)
+    try:
+        print(json.dumps(pipeline.refresh_relations(conn), ensure_ascii=False, indent=2))
+    finally:
+        conn.close()
+
+
 def cmd_backfill_filings(args):
     reg, profile, conn = _ctx(args)
     only = args.source.split(",") if args.source else None
@@ -299,6 +307,10 @@ def main():
     p.add_argument("-n", type=int, default=25)
     p.add_argument("--min-cred", dest="min_cred", type=float, default=0.0)
     p.set_defaults(func=cmd_top)
+
+    sub.add_parser("refresh-relations",
+                   help="用当前分类器重刷已入库的 claim 关系（不重聚类、不改引号）"
+                   ).set_defaults(func=cmd_refresh_relations)
 
     p = sub.add_parser("backfill-filings", help="回填历史 SEC 申报（补动向账本的长期趋势）")
     p.add_argument("--pages", type=int, default=4, help="每源往回翻几页（每页 100 份）")
