@@ -11,7 +11,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import (alerting, config, digest, entities, evidence, markets, movements, ops,
-               pipeline, quality, research, search, store)
+               pipeline, quality, research, search, source_scores, store)
 from .normalize import now_ts
 
 _refresh_lock = threading.Lock()
@@ -131,6 +131,13 @@ def _json_cluster(row) -> dict:
     d["topics"] = json.loads(row["topics"] or "[]")
     d["breakdown"] = json.loads(row["breakdown"] or "{}")
     d["llm"] = json.loads(row["llm"]) if row["llm"] else None
+    # 存疑度与可信度并列返回，前端要同时显示两个轴。旧库（迁移前写入的行）没有这几列，
+    # 用 keys() 判断而不是 try/except，避免把真正的字段名拼错也一起吞掉。
+    keys = row.keys()
+    d["doubt"] = float(row["doubt"] or 0) if "doubt" in keys else 0.0
+    d["doubt_code"] = (row["doubt_code"] or "CLEAR") if "doubt_code" in keys else "CLEAR"
+    d["doubt_detail"] = json.loads(row["doubt_json"] or "{}") if "doubt_json" in keys else {}
+    d.pop("doubt_json", None)
     return d
 
 
@@ -713,18 +720,37 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
                     ])
                     return self._send(200, body.encode(), "text/plain; version=0.0.4; charset=utf-8")
 
+                if p == "/api/source-review":
+                    window = str(q.get("window", ""))
+                    review = source_scores.governance_review(
+                        conn, reg, profile,
+                        window_h=int(window) if window.isdigit() else None)
+                    return self._json(review)
+
                 if p == "/api/sources":
                     health = {h["source_id"]: dict(h) for h in store.health(conn)}
+                    cards = store.latest_scorecards(conn)
                     out = []
                     for s in reg["sources"]:
                         h = health.get(s["id"], {})
                         meta = source_meta[s["id"]]
+                        card = cards.get(s["id"], {})
                         enabled = s.get("enabled", True)
                         verdict = h.get("verdict", "unseen") if enabled else "disabled"
                         out.append({
                             "id": s["id"], "name": s["name"], "tier": s["tier"],
                             "group": s.get("group", s["id"]),
                             "enabled": enabled,
+                            "focus": source_scores.focus_of(s),
+                            "score": card.get("score"),
+                            "grade": card.get("grade"),
+                            "n_lead": card.get("n_lead"),
+                            "n_corroborated": card.get("n_corroborated"),
+                            "n_window_items": card.get("n_items"),
+                            "avg_relevance": card.get("avg_relevance"),
+                            "avg_doubt": card.get("avg_doubt"),
+                            "score_breakdown": card.get("breakdown", {}),
+                            "scored_ts": card.get("computed_ts"),
                             "topics": s.get("topics", []), "note": s.get("note", ""),
                             "lang": s.get("lang", "zh"),
                             **meta,

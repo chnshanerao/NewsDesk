@@ -275,6 +275,29 @@ button { font-family: var(--mono); font-size: 12px; cursor: pointer; }
 .flag { color: var(--red); }
 .gcount { color: var(--green); }
 
+/* 存疑标注：与可信度徽章刻意做成不同形状（描边而非填充），
+   避免用户把两个轴看成同一套分级的不同档位。 */
+.doubt { padding: 0 5px; border-radius: 2px; font-size: 10px; font-weight: 700;
+         white-space: nowrap; border: 1px solid currentColor; background: transparent; }
+.doubt.d-SUSPECT      { color: #e86a6a; }
+.doubt.d-QUESTIONABLE { color: var(--serious); }
+.doubt.d-MINOR        { color: var(--warn); }
+.doubt.d-CLEAR        { display: none; }
+.doubt-score { font-size: 30px; }
+.doubt-panel { display: grid; gap: 5px; border-left: 2px solid var(--line-2);
+               padding-left: 8px; }
+.doubt-panel.d-SUSPECT      { border-left-color: #e86a6a; }
+.doubt-panel.d-QUESTIONABLE { border-left-color: var(--serious); }
+.doubt-panel.d-MINOR        { border-left-color: var(--warn); }
+.doubt-row { display: grid; grid-template-columns: 34px 1fr; gap: 7px;
+             font-size: 11.5px; align-items: baseline; }
+.doubt-row b { color: var(--serious); font-variant-numeric: tabular-nums; }
+.src-summary { background: var(--panel-2); border: 1px solid var(--line-2);
+               padding: 10px; margin-bottom: 12px; font-size: 12px; }
+.src-summary b { color: var(--blue); }
+/* 「不适用」和「零分」必须一眼分得开，所以用灰色破折号而不是数字 0。 */
+.na { color: var(--muted); cursor: help; }
+
 /* 可信度条（事件流里的迷你版） */
 .meter { height: 3px; background: #131a23; border-radius: 1px; margin-top: 4px;
          overflow: hidden; }

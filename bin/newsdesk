@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from newsdesk import benchmark, claim_evaluation, config, digest, evaluation, fetch, pipeline, quality, server, store, verify_llm  # noqa: E402
+from newsdesk import benchmark, claim_evaluation, config, digest, evaluation, fetch, pipeline, quality, server, source_scores, store, verify_llm  # noqa: E402
 from newsdesk.normalize import fmt_ts  # noqa: E402
 
 
@@ -56,7 +56,68 @@ def cmd_run(args):
 def cmd_refresh_relations(args):
     reg, profile, conn = _ctx(args)
     try:
-        print(json.dumps(pipeline.refresh_relations(conn), ensure_ascii=False, indent=2))
+        print(json.dumps(pipeline.refresh_relations(conn, reg),
+                         ensure_ascii=False, indent=2))
+    finally:
+        conn.close()
+
+
+def cmd_source_review(args):
+    """信源治理体检：谁在供稿、谁在贡献、谁该重点关注。只报告，不改文件。"""
+    reg, profile, conn = _ctx(args)
+    try:
+        review = source_scores.governance_review(conn, reg, profile,
+                                                 window_h=args.window)
+        if args.json:
+            print(json.dumps(review, ensure_ascii=False, indent=2))
+            return
+        conc = review["concentration"]
+        print(f"信源 {review['n_sources']} 个 / 启用 {review['enabled']} / "
+              f"近 {args.window or config.CLUSTER_WINDOW_H}h 有产出 {review['producing']}")
+        print(f"产出集中度：第一名 {conc['top_source'].get('source_id', '-')} 占 "
+              f"{conc['top_source'].get('share', 0):.1%}，前三占 {conc['top3_share']:.1%}，"
+              f"最大集团 {conc['top_group']['group']} 占 {conc['top_group']['share']:.1%}，"
+              f"HHI {conc['hhi']}")
+        print(f"\n{'ID':<20}{'档':<4}{'分':>6}{'条':>5}{'首发':>5}{'被印证':>7}"
+              f"{'噪音':>5}{'相关':>6}{'存疑':>6}  建议")
+        print("-" * 104)
+        for card in review["cards"]:
+            if not args.all and not card["n_items"]:
+                continue
+            print(f"{card['source_id']:<20}T{card['tier']:<3}{card['score']:>6.3f}"
+                  f"{card['n_items']:>5}{card['n_lead']:>5}{card['n_corroborated']:>7}"
+                  f"{card['n_noise']:>5}{card['avg_relevance']:>6.2f}"
+                  f"{card['avg_doubt']:>6.1f}  {card['grade']}"
+                  + ("" if card["grade"] == card["focus"]
+                     else f" ← 当前 {card['focus']}"))
+        under = [lang for lang, v in review["lang_relevance"].items()
+                 if v["under_served"]]
+        if under:
+            print(f"\n▸ 相关度偏低语种：{'/'.join(sorted(under))} —— "
+                  "关注画像目前只有中英文词表，这些语种的低分先记在我方账上")
+        if review["proposed_changes"]:
+            print(f"\n▸ 建议改档 {len(review['proposed_changes'])} 个（需人工确认后改 "
+                  "sources.json 的 focus 字段）")
+            for change in review["proposed_changes"][:20]:
+                print(f"  {change['source_id']:<20} {change['current_focus']} → "
+                      f"{change['proposed']:<10} {change['why']}")
+                if change["caveat"]:
+                    print(f"  {'':<20} ⚠ {change['caveat']}")
+        if review["dormant_enabled"]:
+            print(f"\n▸ 启用但零产出 {len(review['dormant_enabled'])} 个 —— "
+                  "先分清是源停更还是本机抓不到，再决定去留")
+            for card in review["dormant_enabled"][:40]:
+                print(f"  {card['source_id']:<20} {card['health_verdict']:<10} "
+                      f"{(card['last_error'] or '')[:40]}")
+    finally:
+        conn.close()
+
+
+def cmd_restate_doubt(args):
+    reg, profile, conn = _ctx(args)
+    try:
+        print(json.dumps(pipeline.restate_doubt(conn, reg), ensure_ascii=False,
+                         indent=2))
     finally:
         conn.close()
 
@@ -202,6 +263,14 @@ def cmd_explain(args):
         for sig in d.get("negative", []):
             print(f"{'':<15} - {sig}")
     print(f"\n相关性明细 {json.dumps(bd.get('relevance', {}), ensure_ascii=False)}")
+    dbt = json.loads(c["doubt_json"] or "{}") if "doubt_json" in c.keys() else {}
+    print(f"\n存疑度 {c['doubt'] if 'doubt' in c.keys() else 0} "
+          f"({dbt.get('label', '无明显存疑')})　—— 与可信度是两个轴："
+          "可信度看证据完整度，存疑度只数主动的可疑信号")
+    for reason in dbt.get("reasons", []):
+        print(f"  +{reason['points']:<3} {reason['reason']}")
+    if not dbt.get("reasons"):
+        print(f"  已查：{'、'.join(dbt.get('checked', []))} —— 均未命中")
     if c["llm"]:
         print("\nLLM 甄别:")
         print(json.dumps(json.loads(c["llm"]), ensure_ascii=False, indent=2))
@@ -311,6 +380,15 @@ def main():
     sub.add_parser("refresh-relations",
                    help="用当前分类器重刷已入库的 claim 关系（不重聚类、不改引号）"
                    ).set_defaults(func=cmd_refresh_relations)
+
+    p = sub.add_parser("source-review", help="信源治理体检：产出/贡献/集中度 + 分档建议")
+    p.add_argument("--window", type=int, help="统计窗口（小时），默认同聚类窗口")
+    p.add_argument("--all", action="store_true", help="含零产出信源")
+    p.add_argument("--json", action="store_true", help="输出机器可读 JSON")
+    p.set_defaults(func=cmd_source_review)
+
+    sub.add_parser("restate-doubt", help="重算全库事件的存疑度（改了权重表后跑）"
+                   ).set_defaults(func=cmd_restate_doubt)
 
     p = sub.add_parser("backfill-filings", help="回填历史 SEC 申报（补动向账本的长期趋势）")
     p.add_argument("--pages", type=int, default=4, help="每源往回翻几页（每页 100 份）")

@@ -30,6 +30,7 @@
   "sources": [
     {
       "id": "gov_yaowen",
+      "focus": "core",
       "name": "中国政府网·要闻",
       "tier": 0,
       "group": "gov_cn",
@@ -119,6 +120,7 @@
     },
     {
       "id": "un_news",
+      "focus": "core",
       "name": "UN News",
       "tier": 0,
       "group": "united_nations",
@@ -171,6 +173,7 @@
     },
     {
       "id": "npr_world",
+      "focus": "probation",
       "name": "NPR · World",
       "tier": 1,
       "group": "npr",
@@ -430,6 +433,7 @@
     },
     {
       "id": "openai_news",
+      "focus": "core",
       "name": "OpenAI · News",
       "tier": 0,
       "group": "openai",
@@ -506,6 +510,7 @@
     },
     {
       "id": "arxiv_cs_ai",
+      "focus": "core",
       "name": "arXiv · cs.AI recent",
       "tier": 2,
       "group": "arxiv",
@@ -563,6 +568,7 @@
     },
     {
       "id": "aws_ml_blog",
+      "focus": "core",
       "name": "AWS Machine Learning Blog",
       "tier": 0,
       "group": "amazon",
@@ -695,6 +701,7 @@
     },
     {
       "id": "the_verge_ai", "name": "The Verge · AI", "tier": 1,
+      "focus": "core",
       "group": "the_verge", "owner": "vox_media", "country": "US", "region": "us",
       "source_type": "newsroom", "source_role": "reporting", "kind": "rss",
       "url": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml", "lang": "en", "max_items": 30,
@@ -735,6 +742,7 @@
     },
     {
       "id": "techxplore_ai", "name": "Tech Xplore · AI", "tier": 1,
+      "focus": "core",
       "group": "techxplore", "owner": "science_x", "country": "GB", "region": "eu",
       "source_type": "science_newsroom", "source_role": "reporting", "kind": "rss",
       "url": "https://techxplore.com/rss-feed/machine-learning-ai-news/", "lang": "en", "max_items": 30,
@@ -751,6 +759,7 @@
     },
     {
       "id": "siliconangle_ai", "name": "SiliconANGLE · AI", "tier": 1,
+      "focus": "core",
       "group": "siliconangle", "owner": "siliconangle_media", "country": "US", "region": "us",
       "source_type": "specialist_newsroom", "source_role": "reporting", "kind": "rss",
       "url": "https://siliconangle.com/category/ai/feed/", "lang": "en", "max_items": 30,
@@ -767,6 +776,7 @@
     },
     {
       "id": "unite_ai", "name": "Unite.AI", "tier": 2,
+      "focus": "core",
       "group": "unite_ai", "owner": "unite_ai", "country": "CA", "region": "us",
       "source_type": "specialist_newsroom", "source_role": "reporting", "kind": "rss",
       "url": "https://www.unite.ai/feed/", "lang": "en", "max_items": 30,
@@ -1226,6 +1236,7 @@
     },
     {
       "id": "sspai",
+      "focus": "probation",
       "name": "少数派",
       "tier": 2,
       "group": "sspai",
@@ -1319,6 +1330,7 @@
     },
     {
       "id": "amd_press",
+      "focus": "probation",
       "name": "AMD 投资者新闻稿",
       "tier": 1,
       "group": "amd",

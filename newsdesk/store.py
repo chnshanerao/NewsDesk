@@ -358,7 +358,31 @@ CREATE INDEX IF NOT EXISTS idx_person_statements_workflow
     ON person_statements(workflow_status,verification_status);
 """
 
-SCHEMA_VERSION = 16
+SOURCE_GOVERNANCE_SCHEMA = """
+-- 信源档案：每次评算留一行，不覆盖历史。治理决定要能回溯「当时是看着什么数据做的」，
+-- 否则一个源被降档半年后没人说得清依据。主键带 computed_ts 就同时是记录和评分。
+CREATE TABLE IF NOT EXISTS source_scorecards (
+    source_id      TEXT NOT NULL,
+    computed_ts    INTEGER NOT NULL,
+    window_h       INTEGER NOT NULL,
+    n_items        INTEGER NOT NULL DEFAULT 0,
+    n_clustered    INTEGER NOT NULL DEFAULT 0,
+    n_lead         INTEGER NOT NULL DEFAULT 0,
+    n_corroborated INTEGER NOT NULL DEFAULT 0,
+    n_noise        INTEGER NOT NULL DEFAULT 0,
+    avg_relevance  REAL NOT NULL DEFAULT 0,
+    avg_cred       REAL NOT NULL DEFAULT 0,
+    avg_doubt      REAL NOT NULL DEFAULT 0,
+    score          REAL NOT NULL DEFAULT 0,
+    grade          TEXT NOT NULL DEFAULT 'dormant',
+    breakdown_json TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY(source_id,computed_ts)
+);
+CREATE INDEX IF NOT EXISTS idx_source_scorecards_latest
+    ON source_scorecards(source_id,computed_ts DESC);
+"""
+
+SCHEMA_VERSION = 18
 
 
 def _ensure_column(conn, table, name, declaration):
@@ -459,6 +483,25 @@ def _person_statements(conn):
     conn.executescript(PERSON_STATEMENTS_SCHEMA)
 
 
+def _cluster_doubt(conn):
+    """存疑度与可信度是两个轴，必须分开存。
+
+    可信度答的是「证据有多完整」，存疑度答的是「有多少主动的可疑信号」。一条官方声明
+    只有单一来源，可信度不高但并不可疑；一条被十家转载的『暴涨』稿证据齐全但用词全是
+    拉抬情绪。把后者压进 cred 会让两种完全不同的问题共用一个数字，用户看不出区别。
+    """
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(clusters)")}
+    for name, decl in (("doubt", "REAL NOT NULL DEFAULT 0"),
+                       ("doubt_code", "TEXT NOT NULL DEFAULT 'CLEAR'"),
+                       ("doubt_json", "TEXT NOT NULL DEFAULT '{}'")):
+        if name not in cols:
+            conn.execute(f"ALTER TABLE clusters ADD COLUMN {name} {decl}")
+
+
+def _source_governance(conn):
+    conn.executescript(SOURCE_GOVERNANCE_SCHEMA)
+
+
 MIGRATIONS = (
     (1, "baseline", _baseline),
     (2, "evidence_and_source_health", _evidence_health),
@@ -478,6 +521,8 @@ MIGRATIONS = (
     # 思想家的产出就是言论，动作台账按设计把言论全部丢掉（SPEECH 命中即 continue），
     # 所以另开一张表：动作台账的编辑政策不动，言论走独立栏位、独立归因边界。
     (16, "person_statements", _person_statements),
+    (17, "cluster_doubt_axis", _cluster_doubt),
+    (18, "source_governance_scorecards", _source_governance),
 )
 
 
@@ -635,7 +680,8 @@ def upsert_cluster(conn, c: dict) -> None:
     conn.execute(
         "INSERT INTO clusters (id,headline,headline_src,url,first_ts,last_ts,n_items,"
         "n_groups,best_tier,topics,cred,cred_code,cred_label,relevance,rank,breakdown,"
-        "llm,content_hash,updated_ts) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+        "llm,content_hash,updated_ts,doubt,doubt_code,doubt_json) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT(id) DO UPDATE SET headline=excluded.headline,"
         "headline_src=excluded.headline_src,url=excluded.url,first_ts=excluded.first_ts,"
         "last_ts=excluded.last_ts,n_items=excluded.n_items,n_groups=excluded.n_groups,"
@@ -645,7 +691,9 @@ def upsert_cluster(conn, c: dict) -> None:
         # 只有事件成员与文本内容未变化时才复用旧 LLM 结论。
         "llm=CASE WHEN clusters.content_hash=excluded.content_hash "
         "THEN COALESCE(excluded.llm,clusters.llm) ELSE excluded.llm END,"
-        "content_hash=excluded.content_hash,updated_ts=excluded.updated_ts",
+        "content_hash=excluded.content_hash,updated_ts=excluded.updated_ts,"
+        "doubt=excluded.doubt,doubt_code=excluded.doubt_code,"
+        "doubt_json=excluded.doubt_json",
         (
             c["id"], c["headline"], c.get("headline_src"), c.get("url"),
             c["first_ts"], c["last_ts"], c["n_items"], c["n_groups"], c["best_tier"],
@@ -655,8 +703,57 @@ def upsert_cluster(conn, c: dict) -> None:
             json.dumps(c["llm"], ensure_ascii=False) if c.get("llm") else None,
             c.get("content_hash"),
             int(time.time()),
+            c.get("doubt", 0.0), c.get("doubt_code", "CLEAR"),
+            json.dumps(c.get("doubt_detail", {}), ensure_ascii=False),
         ),
     )
+
+
+def save_doubt(conn, cluster_id: str, assessment: dict) -> None:
+    conn.execute("UPDATE clusters SET doubt=?,doubt_code=?,doubt_json=?,updated_ts=? "
+                 "WHERE id=?",
+                 (assessment["doubt"], assessment["doubt_code"],
+                  json.dumps(assessment.get("doubt_detail", {}), ensure_ascii=False),
+                  int(time.time()), cluster_id))
+
+
+def save_scorecards(conn, cards: list[dict], computed_ts: int, window_h: int) -> int:
+    """写入一批信源档案。同一时刻重复评算就覆盖那一行，不同时刻各留一行。"""
+    conn.executemany(
+        "INSERT INTO source_scorecards (source_id,computed_ts,window_h,n_items,"
+        "n_clustered,n_lead,n_corroborated,n_noise,avg_relevance,avg_cred,avg_doubt,"
+        "score,grade,breakdown_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+        "ON CONFLICT(source_id,computed_ts) DO UPDATE SET "
+        "n_items=excluded.n_items,n_clustered=excluded.n_clustered,"
+        "n_lead=excluded.n_lead,n_corroborated=excluded.n_corroborated,"
+        "n_noise=excluded.n_noise,avg_relevance=excluded.avg_relevance,"
+        "avg_cred=excluded.avg_cred,avg_doubt=excluded.avg_doubt,score=excluded.score,"
+        "grade=excluded.grade,breakdown_json=excluded.breakdown_json",
+        [(c["source_id"], computed_ts, window_h, c["n_items"], c["n_clustered"],
+          c["n_lead"], c["n_corroborated"], c["n_noise"], c["avg_relevance"],
+          c["avg_cred"], c["avg_doubt"], c["score"], c["grade"],
+          json.dumps(c.get("breakdown", {}), ensure_ascii=False)) for c in cards])
+    conn.commit()
+    return len(cards)
+
+
+def latest_scorecards(conn) -> dict[str, dict]:
+    rows = conn.execute(
+        "SELECT s.* FROM source_scorecards s JOIN (SELECT source_id,"
+        "MAX(computed_ts) AS ts FROM source_scorecards GROUP BY source_id) latest "
+        "ON latest.source_id=s.source_id AND latest.ts=s.computed_ts").fetchall()
+    out = {}
+    for row in rows:
+        card = dict(row)
+        card["breakdown"] = json.loads(card.pop("breakdown_json") or "{}")
+        out[card["source_id"]] = card
+    return out
+
+
+def scorecard_history(conn, source_id: str, limit: int = 30) -> list[dict]:
+    return [dict(row) for row in conn.execute(
+        "SELECT computed_ts,window_h,n_items,score,grade FROM source_scorecards "
+        "WHERE source_id=? ORDER BY computed_ts DESC LIMIT ?", (source_id, limit))]
 
 
 def save_llm(conn, cluster_id: str, payload: dict, cred: float,

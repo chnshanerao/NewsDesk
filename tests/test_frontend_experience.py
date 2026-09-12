@@ -28,6 +28,33 @@ class FrontendExperienceTests(unittest.TestCase):
         self.assertIn("lead?.body||lead?.summary", script.replace(" ", ""))
         self.assertIn("展示${fromBody?\"原文正文\":\"入库摘要\"}的前", script)
 
+    def test_two_axes_are_explained_and_never_merged(self):
+        """存疑度和可信度必须在页面上被讲成两个轴，否则用户会当成同一套分级。"""
+        html = (ROOT / "web" / "index.html").read_text()
+        script = (ROOT / "web" / "app.js").read_text()
+        self.assertIn("存疑标注", html)
+        self.assertIn("两个独立的轴", html)
+        # 全部新闻都展示、存疑的只标不藏 —— 这是产品承诺，不能悄悄改成过滤。
+        self.assertIn("存疑的也不隐藏", html)
+        self.assertIn("doubt_detail", script)
+        self.assertIn("存疑判定", script)
+
+    def test_source_desk_explains_not_applicable_and_lang_bias(self):
+        """治理台要说清『不适用』不是零分，以及低分语种是我方欠工。"""
+        script = (ROOT / "web" / "app.js").read_text()
+        self.assertIn("not_applicable", script)
+        self.assertIn("无从抢首发", script)
+        self.assertIn("别拿我们的欠工去降别人的档", script)
+        # 定档门槛不能在前端写死一个数字，必须由后端带过来。
+        self.assertIn("min_items_for_core", script)
+
+    def test_focus_only_marks_curated_sources(self):
+        """focus 缺省必须是 standard：126 个源里只有人工定过的才带这个字段。"""
+        registry = json.loads((ROOT / "sources.json").read_text())
+        values = {s["id"]: s["focus"] for s in registry["sources"] if "focus" in s}
+        self.assertTrue(values, "至少应有人工定档过的源")
+        self.assertTrue(set(values.values()) <= {"core", "standard", "probation"}, values)
+
     def test_global_wire_sources_enabled(self):
         """联合早报之外还要有独立于中国大陆媒体集团的通讯社。"""
         registry = json.loads((ROOT / "sources.json").read_text())

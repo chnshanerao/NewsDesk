@@ -5,12 +5,12 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from . import cluster as clustering
-from . import (alerting, article, config, credibility, entities, evidence, fetch,
-               movements, store, verify_llm)
+from . import (alerting, article, config, credibility, doubt, entities, evidence,
+               fetch, movements, source_scores, store, verify_llm)
 from .normalize import now_ts
 
 
-def refresh_relations(conn) -> dict:
+def refresh_relations(conn, reg: dict | None = None, log=print) -> dict:
     """用当前分类器重算已入库的 claim–证据关系，不重新聚类、不改引号。
 
     关系是判断，引号是证据。分类器改版后，库里存的关系仍是旧版本的结论：本库
@@ -24,14 +24,17 @@ def refresh_relations(conn) -> dict:
     """
     rows = [dict(x) for x in conn.execute(
         "SELECT ce.claim_id,ce.item_id,ce.relation,ce.source_role,ce.source_group,"
-        "ce.source_id,c.text AS claim_text,i.title,i.summary,i.published_ts,i.fetched_ts "
+        "ce.source_id,c.cluster_id,c.text AS claim_text,i.title,i.summary,"
+        "i.published_ts,i.fetched_ts "
         "FROM claim_evidence ce JOIN claims c ON c.id=ce.claim_id "
         "JOIN items i ON i.id=ce.item_id")]
     before = {}
     after = {}
     changed = []
     cards: dict[str, list[dict]] = {}
+    claim_clusters: dict[str, str] = {}
     for row in rows:
+        claim_clusters[row["claim_id"]] = row["cluster_id"]
         old = row["relation"]
         new = evidence._relation(row["claim_text"], row) or "unknown"
         before[old] = before.get(old, 0) + 1
@@ -46,6 +49,7 @@ def refresh_relations(conn) -> dict:
                      [(new, "heuristic-relation-v2", cid, iid)
                       for new, cid, iid in changed])
     status_changed = 0
+    restated_clusters: set[str] = set()
     for claim_id, refs in cards.items():
         card = evidence.summarize(refs)
         cursor = conn.execute(
@@ -56,9 +60,62 @@ def refresh_relations(conn) -> dict:
              json.dumps(card["source_roles"]), int(time.time()), claim_id,
              card["status"], card["independent_groups"]))
         status_changed += cursor.rowcount
+        if cursor.rowcount and claim_clusters.get(claim_id):
+            restated_clusters.add(claim_clusters[claim_id])
     conn.commit()
+    # 断言状态变了，存疑度里的『反向证据』那一项就跟着变。不重算的话，
+    # 撤掉的假 refute 仍会在页面上给那条新闻扣着 35 分。
+    doubt_result = ({"clusters": 0, "changed": 0} if reg is None else
+                    restate_doubt(conn, reg, sorted(restated_clusters), log=log))
     return {"evidence_rows": len(rows), "relations_changed": len(changed),
-            "claims_restated": status_changed, "before": before, "after": after}
+            "claims_restated": status_changed, "before": before, "after": after,
+            "doubt_restated": doubt_result}
+
+
+def restate_doubt(conn, reg: dict, cluster_ids=None, log=print) -> dict:
+    """重算已入库事件的存疑度。三处会触发：重聚类、LLM 甄别、关系重刷。
+
+    存疑度的输入分散在三张表（clusters 的用词与时间线、items 的来源结构、claims 的
+    反向证据），所以它必须在这些表都写完之后再算一次。三个触发点各写一遍实现的话，
+    迟早出现「LLM 标了 red flag 但存疑度没动」这种页面自相矛盾 —— 判断只能有一处。
+    """
+    health = {h["source_id"]: dict(h) for h in store.health(conn)}
+    roles = {s["id"]: s.get("source_role", config.source_role(s))
+             for s in reg["sources"]}
+    where, args = "", []
+    if cluster_ids is not None:
+        ids = list(cluster_ids)
+        if not ids:
+            return {"clusters": 0, "changed": 0}
+        where = f" WHERE id IN ({','.join('?' * len(ids))})"
+        args = ids
+    rows = conn.execute(f"SELECT * FROM clusters{where}", args).fetchall()
+    changed = 0
+    for row in rows:
+        cluster = {"breakdown": json.loads(row["breakdown"] or "{}"),
+                   "llm": json.loads(row["llm"]) if row["llm"] else None}
+        items = [dict(x) for x in store.cluster_items(conn, row["id"])]
+        for item in items:
+            item["src_role"] = roles.get(item["source_id"], "reporting")
+        claims = store.cluster_claims(conn, row["id"])
+        assessment = doubt.assess(cluster, items, claims, health)
+        if (round(float(row["doubt"] or 0), 1) != assessment["doubt"]
+                or (row["doubt_code"] or "CLEAR") != assessment["doubt_code"]):
+            store.save_doubt(conn, row["id"], assessment)
+            changed += 1
+    conn.commit()
+    return {"clusters": len(rows), "changed": changed}
+
+
+def _focus_ranked(rank: float, members: list[dict], focus: dict) -> float:
+    """『重点关注』只调排序，绝不调可信度。
+
+    偏好和证据是两件事：我更关心谁，不代表谁说的话更可信。所以 focus 乘在 rank 上，
+    cred 那条链一个字都不碰 —— 否则用户看到的 82 分里会掺进「我比较喜欢这家」。
+    """
+    multiplier = max(source_scores.FOCUS_RANK_MULTIPLIER.get(
+        focus.get(it["source_id"], "standard"), 1.0) for it in members)
+    return round(rank * multiplier, 6)
 
 
 def _health_layers(res: dict, src: dict, now: int) -> dict:
@@ -141,16 +198,24 @@ def rescore(conn, reg: dict, profile: dict, window_h: int | None = None,
 
     assignments, n_scored, active_ids = [], 0, []
     tier_weight = reg["tier_weight"]
+    src_focus = {s["id"]: source_scores.focus_of(s) for s in reg["sources"]}
+    health = {h["source_id"]: dict(h) for h in store.health(conn)}
     entities.sync_catalog(conn)
+    doubt_bands: dict[str, int] = {}
     for cid, members in groups.items():
         c = credibility.score_cluster(members, profile, tier_weight, now)
         c["id"] = cid
+        # 断言要先算出来：存疑度的『反向证据』一项要看 claims 的状态。
+        claims = evidence.claims(members, c.get("llm"))
+        c.update(doubt.assess(c, members, claims, health))
+        c["rank"] = _focus_ranked(c["rank"], members, src_focus)
+        doubt_bands[c["doubt_code"]] = doubt_bands.get(c["doubt_code"], 0) + 1
         store.upsert_cluster(conn, c)
         entity_text = " ".join(
             [c["headline"], *[m["title"] + " " + (m.get("summary") or "")
                               for m in members]])
         entities.link_cluster(conn, cid, entity_text)
-        store.replace_cluster_claims(conn, cid, evidence.claims(members, c.get("llm")))
+        store.replace_cluster_claims(conn, cid, claims)
         active_ids.append(cid)
         assignments.extend((it["id"], cid) for it in members)
         n_scored += 1
@@ -172,7 +237,12 @@ def rescore(conn, reg: dict, profile: dict, window_h: int | None = None,
     conn.execute("UPDATE items SET cluster_id=NULL WHERE cluster_id IS NOT NULL AND "
                  "NOT EXISTS (SELECT 1 FROM clusters c WHERE c.id=items.cluster_id)")
     conn.commit()
-    return {"n_items": len(items), "n_clusters": n_scored}
+    flagged = sum(n for code, n in doubt_bands.items()
+                  if code in ("SUSPECT", "QUESTIONABLE"))
+    log(f"  存疑标注 {flagged}/{n_scored} 个事件有存疑点"
+        f"（高度存疑 {doubt_bands.get('SUSPECT', 0)}）")
+    return {"n_items": len(items), "n_clusters": n_scored,
+            "doubt_bands": doubt_bands}
 
 
 def hydrate_bodies(conn, reg: dict, limit: int | None = None, log=print) -> dict:
@@ -202,7 +272,7 @@ def hydrate_bodies(conn, reg: dict, limit: int | None = None, log=print) -> dict
 
 
 def llm_pass(conn, profile: dict, top_n: int | None = None, log=print,
-             source_roles: dict | None = None) -> dict:
+             source_roles: dict | None = None, reg: dict | None = None) -> dict:
     """对排名最高的事件跑 LLM 甄别。已有结果的跳过，省钱。"""
     top_n = top_n or config.LLM_MAX_CLUSTERS
     now = now_ts()
@@ -244,6 +314,10 @@ def llm_pass(conn, profile: dict, top_n: int | None = None, log=print,
             conn, c["id"], evidence.claims(items_by_cluster[c["id"]], res))
         conn.execute("UPDATE clusters SET relevance=? WHERE id=?", (rel, c["id"]))
         conn.commit()
+        # LLM 的 red_flags 是存疑度的输入之一，甄别完必须重算，否则页面上会出现
+        # 「模型标了 3 处疑点，存疑度仍是 0」。
+        if reg is not None:
+            restate_doubt(conn, reg, [c["id"]], log=log)
         ok += 1
         arrow = "↑" if cred > c["cred"] else ("↓" if cred < c["cred"] else "=")
         log(f"  [LLM] {c['cred']:>5.1f}{arrow}{cred:<5.1f} {code:<9} "
@@ -366,7 +440,16 @@ def run(conn, reg: dict, profile: dict, *, use_llm=False, only=None,
             log("▸ LLM 内容甄别")
             source_roles = {s["id"]: s.get("source_role", config.source_role(s))
                             for s in reg["sources"]}
-            llm = llm_pass(conn, profile, log=log, source_roles=source_roles)
+            llm = llm_pass(conn, profile, log=log, source_roles=source_roles, reg=reg)
+        # 信源档案：每轮留一份快照。治理决定要能回溯当时看的是什么数据，
+        # 所以是 append 一行而不是覆盖 —— 一个源被降档半年后还说得清依据。
+        try:
+            cards = source_scores.persist(conn, reg, profile, window_h=window_h)
+            log(f"▸ 信源档案 {cards['sources']} 个源已评算："
+                + "、".join(f"{k} {v}" for k, v in sorted(cards["grades"].items())))
+        except Exception as exc:
+            cards = {"error": f"{type(exc).__name__}: {exc}"}
+            log(f"  [SCORECARD ERR] {cards['error']}")
         alert_results = alerting.evaluate(conn, notify=True)
         alert_new = sum(x["new_count"] for x in alert_results)
         if alert_new:
@@ -375,7 +458,7 @@ def run(conn, reg: dict, profile: dict, *, use_llm=False, only=None,
                       n_clusters=sc["n_clusters"], llm_used=use_llm,
                       note=f"llm_ok={llm['ok']} llm_err={llm['err']} alerts={alert_new}")
         return {**ing, **sc, "llm": llm, "body": body, "movement": movement,
-                "alert_new": alert_new,
+                "alert_new": alert_new, "scorecards": cards,
                 "elapsed": round(time.time() - t0, 1)}
     except Exception as exc:
         store.fail_run(conn, run_id, f"{type(exc).__name__}: {exc}")

@@ -44,7 +44,12 @@ def _hits(text: str, words: list[str]) -> list[str]:
 
 
 def content_quality(headline: str, bodies: list[str]) -> tuple[float, dict]:
-    """返回 (0~1 分数, 明细)。明细里的正负信号会直接展示给用户。"""
+    """返回 (0~1 分数, 明细)。明细里的正负信号会直接展示给用户。
+
+    明细还带一份原始命中词（`flags`）。存疑度要用同一批词表命中结果，如果它自己再匹配
+    一遍，两处词表迟早会分叉 —— 页面上就会出现「内容质量说有标题党、存疑度说没有」。
+    匹配只做一次，判断可以有两套。
+    """
     text = headline + " " + " ".join(bodies)[:1500]
     score = 0.62
     pos, neg = [], []
@@ -107,7 +112,12 @@ def content_quality(headline: str, bodies: list[str]) -> tuple[float, dict]:
         score -= 0.05
         neg.append("只有标题，无摘要")
 
-    return max(0.0, min(1.0, score)), {"positive": pos, "negative": neg}
+    return max(0.0, min(1.0, score)), {
+        "positive": pos, "negative": neg,
+        "flags": {"clickbait": cb, "rumor": rumor, "attribution": attrib, "hype": hype,
+                  "exclamations": excl, "emoji": bool(EMOJI_RE.search(headline)),
+                  "n_numbers": len(nums), "body_chars": body_len},
+    }
 
 
 def corroboration(n_groups: int, best_tier: int,
