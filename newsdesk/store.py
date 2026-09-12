@@ -325,7 +325,40 @@ CREATE TABLE IF NOT EXISTS edgar_holdings (
 CREATE INDEX IF NOT EXISTS idx_edgar_holdings_filer ON edgar_holdings(filer_key,period);
 """
 
-SCHEMA_VERSION = 15
+PERSON_STATEMENTS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS person_statements (
+    id TEXT PRIMARY KEY,
+    person_id TEXT NOT NULL REFERENCES persons(id),
+    cluster_id TEXT,
+    item_id TEXT,
+    kind TEXT NOT NULL CHECK(kind IN ('argument','forecast','assessment','warning','call_to_action')),
+    title TEXT NOT NULL,
+    quote TEXT NOT NULL,
+    quote_hash TEXT NOT NULL,
+    quote_start INTEGER,
+    quote_end INTEGER,
+    topic_json TEXT NOT NULL DEFAULT '[]',
+    stated_ts INTEGER,
+    disclosed_ts INTEGER NOT NULL,
+    source_url TEXT,
+    source_owner TEXT,
+    -- 言论只能证明「此人说过此话」，不能证明所述内容为真。这一列把这条边界写进数据本身。
+    attribution_basis TEXT NOT NULL DEFAULT 'direct_quote'
+        CHECK(attribution_basis IN ('direct_quote','paraphrase_reported','own_publication')),
+    verification_status TEXT NOT NULL DEFAULT 'candidate',
+    workflow_status TEXT NOT NULL DEFAULT 'draft',
+    confidence REAL NOT NULL DEFAULT .6 CHECK(confidence BETWEEN 0 AND 1),
+    dedupe_key TEXT NOT NULL UNIQUE,
+    created_ts INTEGER NOT NULL,
+    updated_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_person_statements_person
+    ON person_statements(person_id,disclosed_ts DESC);
+CREATE INDEX IF NOT EXISTS idx_person_statements_workflow
+    ON person_statements(workflow_status,verification_status);
+"""
+
+SCHEMA_VERSION = 16
 
 
 def _ensure_column(conn, table, name, declaration):
@@ -422,6 +455,10 @@ def _edgar_holdings(conn):
     conn.executescript(EDGAR_HOLDINGS_SCHEMA)
 
 
+def _person_statements(conn):
+    conn.executescript(PERSON_STATEMENTS_SCHEMA)
+
+
 MIGRATIONS = (
     (1, "baseline", _baseline),
     (2, "evidence_and_source_health", _evidence_health),
@@ -438,6 +475,9 @@ MIGRATIONS = (
     (13, "movement_review_audit", _movement_review_audit),
     (14, "movement_execution_status", _movement_execution_status),
     (15, "edgar_13f_holdings", _edgar_holdings),
+    # 思想家的产出就是言论，动作台账按设计把言论全部丢掉（SPEECH 命中即 continue），
+    # 所以另开一张表：动作台账的编辑政策不动，言论走独立栏位、独立归因边界。
+    (16, "person_statements", _person_statements),
 )
 
 
