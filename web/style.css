@@ -68,8 +68,13 @@ button { font-family: var(--mono); font-size: 12px; cursor: pointer; }
 .tab.on { color: #0a0d12; background: var(--amber); font-weight: 700; }
 .tab kbd { opacity: .55; margin-left: 4px; font-size: 9px; }
 .mode-switch { display: flex; border: 1px solid var(--line-2); border-radius: 2px; overflow: hidden; }
-.mode-switch a.mode-btn { text-decoration: none; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
-.movement-entry { color: var(--amber) !important; border-left: 1px solid var(--line-2) !important; }
+.movement-entry {
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  padding: 3px 10px; border: 1px solid var(--amber-dim); border-radius: 2px;
+  background: transparent; color: var(--amber); text-decoration: none;
+  font: 12px var(--mono);
+}
+.movement-entry:hover { background: #1a2230; text-decoration: none; color: #fff; }
 .movement-entry small { padding: 1px 3px; border: 1px solid currentColor; font-size: 8px; letter-spacing: .05em; }
 .mode-btn { padding: 3px 8px; border: 0; border-right: 1px solid var(--line-2);
             background: #0a0f16; color: var(--fg-dim2); }
@@ -509,20 +514,73 @@ kbd {
        background: #0a0f16; border: 1px solid var(--line); padding: 6px; border-radius: 2px;
        white-space: pre-wrap; }
 
+/* ---------- 版本更新通知 ---------- */
+.changelog-banner {
+  display: flex; align-items: center; gap: 10px; padding: 6px 14px;
+  background: linear-gradient(90deg, #1a2a10 0%, #0e1f08 100%);
+  border-bottom: 1px solid #3a6620; color: #b8e986; font-size: 12px;
+  z-index: 60; position: relative;
+}
+.changelog-banner b { color: #7dd83a; }
+.changelog-banner .changelog-view { color: #7dd83a; border-color: #3a6620; }
+.changelog-banner .changelog-dismiss { color: #6a8a50; border: 0; background: transparent; padding: 2px 6px; }
+.changelog-banner .changelog-dismiss:hover { color: #b8e986; }
+.changelog-btn { border-color: #3a6620; color: #7dd83a; }
+.changelog { display: grid; gap: 18px; }
+.changelog-entry { border-left: 2px solid var(--green); padding-left: 12px; }
+.changelog-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.changelog-head b { color: var(--green); font-size: 14px; }
+.changelog-head span { color: var(--fg-dim2); font-size: 11px; }
+.changelog-head em { color: var(--amber); font-style: normal; font-size: 12px; }
+.changelog ul { margin: 0; padding-left: 18px; }
+.changelog li { color: var(--fg); font-size: 12px; line-height: 1.7; }
+
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: #0a0d12; }
 ::-webkit-scrollbar-thumb { background: #212b38; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #2e3b4c; }
 
+/* ---------- 关闭详情按钮（PC + 移动通用） ---------- */
+.detail-back {
+  display: flex; align-items: center; gap: 6px;
+  position: sticky; top: 0; z-index: 1;
+  width: calc(100% + 28px); margin: -12px -14px 10px; padding: 7px 14px;
+  background: linear-gradient(#141b24, #0f151d); border: 0;
+  border-bottom: 1px solid var(--line-2);
+  color: var(--amber); font: 12px var(--mono); cursor: pointer;
+  -webkit-tap-highlight-color: rgba(245,166,35,.15);
+}
+.detail-back:hover { background: #1a2230; color: #fff; }
+.detail-back:active { background: #222e3c; }
+.detail.empty .detail-back { display: none; }
+
 @media (max-width: 1100px) {
   .detail { position: fixed; right: 0; top: 0; bottom: 0; width: 460px; z-index: 40;
             box-shadow: -8px 0 30px rgba(0,0,0,.6); }
   .detail.empty { display: none; }
+  .detail-back { padding: 10px 14px; font-size: 13px; }
 }
 @media (max-width: 700px) {
   .side { display: none; }
   .detail { width: 100%; min-width: 0; }
-  .kpi:nth-child(n+5) { display: none; }
+  .detail-back { padding: 14px 14px; font-size: 14px; }
+  .kpis { display: none; }
+  .topbar { height: auto; min-height: 38px; flex-wrap: wrap; padding: 4px 8px; gap: 4px; }
+  .brand-copy { display: none; }
+  .movement-entry { order: -2; }
+  .tabs { order: -1; }
+  .mode-switch { order: 1; }
+  .search { order: 2; width: 100%; }
+  .spacer { display: none; }
+  #btn-sources, #btn-quality, #btn-digest, #btn-alerts, #btn-watchlist,
+  #btn-changelog, #btn-help, #btn-command { display: none; }
+  .ev { padding: 10px; gap: 8px; }
+  .tab { padding: 6px 10px; }
+  .mode-btn { padding: 5px 8px; }
+  .market-strip { gap: 10px; padding: 4px 8px; }
+  .modal { padding: 10px; }
+  .modal-box { max-height: 100vh; }
   .welcome-difference { grid-template-columns: 1fr; }
   .welcome-hero { padding: 26px 22px 22px; }
+  .mode-banner { flex-wrap: wrap; }
 }

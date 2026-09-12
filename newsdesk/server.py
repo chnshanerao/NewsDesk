@@ -141,6 +141,17 @@ def _json_cluster(row) -> dict:
     return d
 
 
+def _load_changelog() -> list:
+    p = config.ROOT / "changelog.json"
+    try:
+        return json.loads(p.read_text("utf-8")) if p.is_file() else []
+    except Exception:
+        return []
+
+
+_changelog = _load_changelog()
+
+
 def make_handler(reg: dict, profile: dict, use_llm: bool):
     source_meta = {
         s["id"]: {**s, **_source_metadata(s),
@@ -252,6 +263,8 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
                 return self._static(p[len("/static/"):])
             if p == "/favicon.ico":
                 return self._send(204, b"", "image/x-icon")
+            if p == "/api/changelog":
+                return self._json(_changelog)
             if p == "/healthz":
                 return self._json({"ok": True, "uptime_s": now_ts() - _server_started})
             if p == "/readyz":
@@ -398,7 +411,25 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
                         items = [c for c in items
                                  if c["relevance"] < profile.get("min_relevance", 0.12)
                                  or c["cred"] < profile.get("min_credibility", 40)]
-                    # “全部”不是“让数量最多的语言霸榜”。保留各语言内部排序，
+                    _AI_TOPICS = {"ai_research", "ai_models", "ai_compute",
+                                  "ai_open_source", "ai_governance", "ai_industry"}
+                    focus = q.get("focus", "all")
+                    if focus == "ai":
+                        items = [c for c in items
+                                 if c.get("topics") and c["topics"][0] in _AI_TOPICS]
+                    elif focus == "balanced":
+                        ai = [c for c in items
+                              if c.get("topics") and c["topics"][0] in _AI_TOPICS]
+                        other = [c for c in items
+                                 if not (c.get("topics") and c["topics"][0] in _AI_TOPICS)]
+                        mixed = []
+                        while other or ai:
+                            mixed.extend(other[:5])
+                            del other[:5]
+                            if ai:
+                                mixed.append(ai.pop(0))
+                        items = mixed
+                    # “全部”不是”让数量最多的语言霸榜”。保留各语言内部排序，
                     # 每 4 条主要语言内容插入 1 条英文内容，让国际来源在首屏可见。
                     # 显式选择 zh/en 时不做混排。
                     if (not wanted_lang or wanted_lang == "all") and view == "signal":
@@ -413,7 +444,7 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
                         items = mixed
                     page = (_owner_capped(items, limit) if view == "signal" else items[:limit])
                     return self._json({"items": page, "total": len(items), "view": view,
-                                       "parsed_query": parsed})
+                                       "focus": focus, "parsed_query": parsed})
 
                 if p.startswith("/api/cluster/"):
                     cid = p.rsplit("/", 1)[-1]

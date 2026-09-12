@@ -13,6 +13,7 @@
     <b>NEWSDESK</b>
     <span class="brand-copy"><strong>只看真新闻</strong><small>在虚假、奶头乐与营销伪装中，把注意力还给可验证的重要事实。</small></span>
   </button>
+  <a class="movement-entry" href="/movements.html" title="查看人物的可验证资本与组织行动"><small>试运行</small>大佬动向</a>
   <div class="tabs">
     <button class="tab on" data-view="signal">值得看<kbd>1</kbd></button>
     <button class="tab" data-view="unverified">待证<kbd>2</kbd></button>
@@ -21,7 +22,6 @@
   <div class="mode-switch" role="group" aria-label="新闻浏览模式">
     <button class="mode-btn" data-mode="public" title="不使用个人相关性门槛">公共全景</button>
     <button class="mode-btn on" data-mode="personal" title="按当前个人画像筛选">为我推荐</button>
-    <a class="mode-btn movement-entry" href="/movements.html" title="查看人物的可验证资本与组织行动"><small>试运行</small>大佬动向</a>
   </div>
   <input id="q" class="search" placeholder="搜索；支持 source: lang: topic: asset: cred: after:  /" autocomplete="off">
   <div class="spacer"></div>
@@ -32,6 +32,7 @@
   <button class="btn" id="btn-digest">简报 <kbd>d</kbd></button>
   <button class="btn" id="btn-alerts">监控 <span class="alert-badge" id="alert-badge" hidden>0</span> <kbd>a</kbd></button>
   <button class="btn" id="btn-watchlist">观察列表 <kbd>w</kbd></button>
+  <button class="btn changelog-btn" id="btn-changelog" title="版本更新记录">更新 <kbd>n</kbd></button>
   <button class="btn" id="btn-help" title="三步上手与快捷键">上手 <kbd>?</kbd></button>
   <button class="btn command-trigger" id="btn-command">命令 <kbd>Ctrl K</kbd></button>
   <button class="btn" id="btn-refresh">刷新 <kbd>r</kbd></button>
@@ -46,6 +47,8 @@
 
 <div class="main">
   <div class="side">
+    <h4>视角</h4>
+    <div id="focus-chips"></div>
     <h4>主题</h4>
     <div id="topics"></div>
     <h4>时间窗</h4>
