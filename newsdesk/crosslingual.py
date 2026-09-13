@@ -172,7 +172,11 @@ CURRENCY_ALIASES = {
 
 def _contains(text: str, alias: str) -> bool:
     if _LATIN_RE.search(alias):
-        return re.search(r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9])",
+        # 尾部允许紧跟版本数字（Qwen3 / Llama3 / Grok2 / GPT5），但仍禁尾部字母
+        # （meta↛metaverse、grok↛grokking）。模型名+版本号是 zh↔en 桥接的主力场景：
+        # 中文侧「通义千问」命中，英文侧却因 qwen 后跟 3 被词边界挡掉，白丢一条印证。
+        # 首部边界不放宽（(?<![a-z0-9]) 保留），避免 aqwen / 3qwen 之类误命中。
+        return re.search(r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z])",
                          text, re.I) is not None
     return alias in text
 
