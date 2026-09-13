@@ -1214,6 +1214,40 @@
       "enabled": true
     },
     {
+      "id": "qbitai",
+      "name": "量子位",
+      "tier": 2,
+      "group": "qbitai",
+      "kind": "rss",
+      "url": "https://www.qbitai.com/feed",
+      "lang": "zh",
+      "topics": [
+        "ai_models",
+        "ai_industry",
+        "ai_research",
+        "tech"
+      ],
+      "enabled": true,
+      "note": "中文 AI 垂媒，覆盖全球 AI 大事；WordPress /feed。为跨语言印证提供中文侧独立采编"
+    },
+    {
+      "id": "leiphone",
+      "name": "雷峰网",
+      "tier": 2,
+      "group": "leiphone",
+      "kind": "rss",
+      "url": "https://www.leiphone.com/feed",
+      "lang": "zh",
+      "topics": [
+        "ai_models",
+        "ai_compute",
+        "ai_industry",
+        "tech"
+      ],
+      "enabled": true,
+      "note": "中文 AI/机器人/芯片垂媒，自有采编；WordPress /feed"
+    },
+    {
       "id": "hackernews",
       "name": "Hacker News Front Page",
       "tier": 2,
@@ -1321,7 +1355,7 @@
     {
       "id": "36kr",
       "name": "36氪",
-      "tier": 2,
+      "tier": 3,
       "group": "36kr",
       "kind": "rss",
       "url": "https://36kr.com/feed",
@@ -1331,7 +1365,7 @@
         "career"
       ],
       "enabled": false,
-      "note": "2026-09 实测 /feed 已被风控，返回反爬 HTML 而非 RSS"
+      "note": "降权至 tier3(aggregator，不计入独立印证)：营销属性重，付费即可发稿，非独立采编。且 2026-09 实测 /feed 已被风控返回反爬 HTML。若日后启用也仅作线索聚合"
     },
     {
       "id": "readhub",

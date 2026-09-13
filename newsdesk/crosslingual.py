@@ -34,6 +34,35 @@ ENTITY_ALIASES = {
     "samsung": ("三星电子", "samsung electronics", "samsung"),
     "tsmc": ("台积电", "taiwan semiconductor manufacturing", "tsmc"),
     "byd": ("比亚迪", "byd"),
+    # AI 实体：中文媒体多保留拉丁原名（OpenAI/GPT/Claude），故英文别名即可命中中文标题；
+    # 有通行中文译名的（通义千问/深度求索/昇腾）补上中文侧。刻意不收有歧义的短词
+    # （perplexity=困惑度、block、now、figure、together），避免误桥。
+    "anthropic": ("anthropic",),
+    "cohere": ("cohere",),
+    "mistral": ("mistral ai", "mistral"),
+    "xai": ("x.ai", "xai"),
+    "hugging_face": ("hugging face", "huggingface", "抱抱脸"),
+    "databricks": ("databricks",),
+    "coreweave": ("coreweave",),
+    "cerebras": ("cerebras",),
+    "groq": ("groq",),
+    "scale_ai": ("scale ai",),
+    "stability_ai": ("stability ai", "stable diffusion"),
+    "midjourney": ("midjourney",),
+    "deepmind": ("deepmind", "谷歌深度思维"),
+    "gpt": ("chatgpt", "gpt"),
+    "claude": ("claude",),
+    "gemini": ("gemini",),
+    "llama": ("llama",),
+    "qwen": ("qwen", "通义千问", "通义"),
+    "deepseek": ("deepseek", "深度求索"),
+    "grok": ("grok",),
+    "copilot": ("copilot",),
+    "nvidia_h100": ("h100",),
+    "nvidia_h200": ("h200",),
+    "nvidia_b200": ("b200",),
+    "google_tpu": ("google tpu",),
+    "ascend_910": ("昇腾910", "昇腾 910", "ascend 910"),
 }
 
 EVENT_ALIASES = {
@@ -47,7 +76,18 @@ EVENT_ALIASES = {
     "acquisition": ("收购", "并购", "acquire", "acquires", "acquisition", "buyout"),
     "layoff": ("裁员", "裁减岗位", "layoff", "layoffs", "cuts jobs", "job cuts"),
     "earnings": ("财报", "业绩", "营收", "净利润", "earnings", "revenue", "net profit"),
-    "launch": ("发布新产品", "推出", "launch", "launches", "unveils", "released"),
+    # 「发布」单收会把「苹果发布财报」↔「Apple launches iPhone」这类同实体异事件
+    # 桥错（实测 gold 精度掉到 0.90 < 0.95 闸门），故只收不带歧义的「发布新产品」，
+    # 中文上市动词靠「推出/上线」兜底；英文侧动词齐全，桥接两侧都需命中同一事件。
+    "launch": ("发布新产品", "推出", "上线", "launch", "launches", "launched",
+               "unveils", "unveiled", "released", "debuts", "rolls out"),
+    "open_source": ("开源", "开放源代码", "开放权重", "open source", "open-source",
+                    "open-sources", "open sources", "open-weight", "open weights"),
+    "benchmark": ("跑分", "基准测试", "刷新榜单", "benchmark", "benchmarks"),
+    "funding": ("融资", "获投", "估值", "领投", "融到", "funding round",
+                "valuation", "series a", "series b", "series c"),
+    "partnership": ("携手", "达成合作", "结成联盟", "partners with",
+                    "partnership with", "teams up with"),
     "ban": ("禁止", "禁令", "禁售", "封禁", "ban", "bans", "blocked"),
     "approval": ("批准", "获批", "核准", "approved", "approves", "approval"),
     "recall": ("召回", "recall", "recalls"),
