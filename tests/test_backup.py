@@ -1,10 +1,12 @@
+import json
 import sqlite3
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from newsdesk import config, store
+from newsdesk import config, server, store
 
 
 class BackupTests(unittest.TestCase):
@@ -38,6 +40,40 @@ class BackupTests(unittest.TestCase):
             self.assertEqual(result["counts"]["runs"], 1)
             self.assertIn("entities", result["counts"])
             self.assertIn("source_probes", result["counts"])
+
+    def test_record_recovery_drill_writes_status(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            db = root / "source.db"
+            with mock.patch.object(config, "DB_PATH", db), \
+                 mock.patch.object(config, "DATA_DIR", root):
+                conn = store.connect(); store.init(conn); conn.close()
+                backup = store.backup_database(root / "copy.db")
+                result = server._record_recovery_drill(backup)
+            self.assertTrue(result["ok"])
+            status = json.loads((root / "recovery-status.json").read_text())
+            self.assertTrue(status["ok"])
+            self.assertGreater(status["verified_ts"], 0)
+
+    def test_seed_recovery_drill_creates_then_skips_when_fresh(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            backups = root / "backups"; backups.mkdir()
+            db = root / "source.db"
+            with mock.patch.object(config, "DB_PATH", db), \
+                 mock.patch.object(config, "DATA_DIR", root), \
+                 mock.patch.object(config, "BACKUP_DIR", backups):
+                conn = store.connect(); store.init(conn); conn.close()
+                store.backup_database(backups / "newsdesk-x.db")
+                status_path = root / "recovery-status.json"
+                # no prior record -> drills and writes a status
+                server._seed_recovery_drill()
+                self.assertTrue(status_path.exists())
+                first = json.loads(status_path.read_text())["verified_ts"]
+                # fresh record present -> second seed must not re-run/rewrite
+                time.sleep(1)
+                server._seed_recovery_drill()
+                self.assertEqual(json.loads(status_path.read_text())["verified_ts"], first)
 
     def test_schema_migrations_are_idempotent_and_audited(self):
         with tempfile.TemporaryDirectory() as td:

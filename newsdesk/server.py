@@ -1041,6 +1041,38 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
     return Handler
 
 
+def _record_recovery_drill(backup) -> dict:
+    """在隔离环境还原备份并校验，把结果写进 recovery-status.json（质量门禁读取）。"""
+    result = store.recovery_drill(backup)
+    status = {**result, "verified_ts": now_ts()}
+    path = config.DATA_DIR / "recovery-status.json"
+    path.write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+    return result
+
+
+def _seed_recovery_drill():
+    """启动时若无近一天内的演练记录，就对最新备份补跑一次，避免部署后 7 天内门禁 FAIL。"""
+    status_path = config.DATA_DIR / "recovery-status.json"
+    try:
+        existing = json.loads(status_path.read_text(encoding="utf-8"))
+        if existing.get("ok") and now_ts() - int(existing.get("verified_ts", 0)) < config.AUTO_BACKUP_SECONDS:
+            return  # 已有新鲜记录，快速重启（如每小时部署）不必重复演练
+    except (OSError, ValueError):
+        pass
+    try:
+        backups = sorted(config.BACKUP_DIR.glob("newsdesk-*.db"), key=lambda p: p.stat().st_mtime)
+        backup = backups[-1] if backups else store.backup_database(keep=config.BACKUP_KEEP)
+        _record_recovery_drill(backup)
+        ops.event(_logger, "recovery_drill_seeded", backup=str(backup))
+    except Exception as exc:
+        ops.event(_logger, "recovery_drill_seed_failed", str(exc),
+                  level=logging.ERROR, error_type=type(exc).__name__)
+
+
 def serve(reg: dict, profile: dict, host=None, port=None, use_llm=False):
     host = host or config.SERVER_HOST
     port = port or config.SERVER_PORT
@@ -1073,6 +1105,12 @@ def serve(reg: dict, profile: dict, host=None, port=None, use_llm=False):
                     path = store.backup_database(keep=config.BACKUP_KEEP)
                     _ops_state["backup_last_success"] = now_ts()
                     ops.event(_logger, "backup_completed", path=str(path))
+                    try:
+                        _record_recovery_drill(path)
+                        ops.event(_logger, "recovery_drill_completed", backup=str(path))
+                    except Exception as exc:
+                        ops.event(_logger, "recovery_drill_failed", str(exc),
+                                  level=logging.ERROR, error_type=type(exc).__name__)
                 except Exception as exc:
                     _ops_state["backup_last_failure"] = now_ts()
                     ops.event(_logger, "backup_failed", str(exc), level=logging.ERROR,
@@ -1081,6 +1119,8 @@ def serve(reg: dict, profile: dict, host=None, port=None, use_llm=False):
                          name="newsdesk-backup").start()
         ops.event(_logger, "backup_scheduler_started",
                   interval_s=config.AUTO_BACKUP_SECONDS, keep=config.BACKUP_KEEP)
+        threading.Thread(target=_seed_recovery_drill, daemon=True,
+                         name="newsdesk-recovery-seed").start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
