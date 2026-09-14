@@ -63,6 +63,22 @@ ENTITY_ALIASES = {
     "nvidia_b200": ("b200",),
     "google_tpu": ("google tpu",),
     "ascend_910": ("昇腾910", "昇腾 910", "ascend 910"),
+    # 中国 AI 大模型厂商：中文名 + 英文报道常用名/产品名，都是 zh↔en 桥接高频实体。
+    # 刻意排除歧义短词：不收 "spark"(Apache/通用词)、"yi"(太短)、裸「蚂蚁」(蚂蚁森林)、
+    # 裸「阶跃」(阶跃函数)、裸「百川」(海纳百川)。歧义厂商只留英文侧或全称。
+    "zhipu": ("智谱", "智谱ai", "zhipu", "zhipu ai", "glm"),
+    "moonshot": ("月之暗面", "moonshot ai", "moonshot", "kimi"),
+    "baichuan": ("百川智能", "baichuan"),
+    "sensetime": ("商汤科技", "商汤", "sensetime"),
+    "stepfun": ("阶跃星辰", "stepfun"),
+    "minimax_ai": ("minimax", "稀宇科技"),
+    "zero_one": ("零一万物", "01.ai", "01ai"),
+    "modelbest": ("面壁智能", "minicpm"),
+    "iflytek": ("科大讯飞", "讯飞", "iflytek", "讯飞星火"),
+    "bytedance_ai": ("字节跳动", "豆包", "doubao", "bytedance"),
+    "tencent_ai": ("腾讯", "tencent", "混元", "hunyuan"),
+    "baidu_ai": ("百度", "baidu", "文心一言", "ernie"),
+    "ant_group": ("蚂蚁集团", "蚂蚁金服", "ant group"),
 }
 
 EVENT_ALIASES = {

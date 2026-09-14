@@ -133,8 +133,8 @@
       "url": "https://news.un.org/feed/subscribe/en/news/all/rss.xml",
       "lang": "en",
       "topics": ["world", "policy", "risk"],
-      "enabled": true,
-      "note": "一次信源：联合国官方新闻，覆盖国际治理、人道与冲突议题"
+      "enabled": false,
+      "note": "停用：此 RSS 路径线上持续 404（联合国改版）。正确路径需在 ECS 侧 curl 校正后再启用，别盲改"
     },
     {
       "id": "fed_press",
@@ -1893,8 +1893,8 @@
       "freshness_hours": 48,
       "max_items": 40,
       "topics": ["policy","macro","industry"],
-      "enabled": true,
-      "note": "布鲁塞尔本地采编，欧盟立法进程的一手口径"
+      "enabled": false,
+      "note": "停用：线上持续 403（反爬拦数据中心 IP），换 URL 无解。候选走 RSSHub 代理恢复"
     },
     {
       "id": "haaretz_en",
@@ -2349,8 +2349,8 @@
       "freshness_hours": 168,
       "max_items": 15,
       "topics": ["ai_research","tech","society"],
-      "enabled": true,
-      "note": "计算机学会会刊，AI 研究的专业评述，比科技媒体的二手解读可靠"
+      "enabled": false,
+      "note": "停用：线上持续 403（反爬）。唯一的英文 AI 源，优先走 RSSHub 代理恢复（见 docs/rsshub-deploy-jiqizhixin.md，可同批加 ACM route）"
     },
     {
       "id": "semiengineering",
@@ -2539,8 +2539,8 @@
       "freshness_hours": 72,
       "max_items": 25,
       "topics": ["world","macro","policy"],
-      "enabled": true,
-      "note": "法语非洲最主要的独立时政媒体，非洲议题不必只靠英美驻非记者"
+      "enabled": false,
+      "note": "停用：线上持续 403（反爬）。且法语与英文同为拉丁字母，跨脚本桥接不触发，印证贡献本就有限"
     },
     {
       "id": "lemondeinfo",
