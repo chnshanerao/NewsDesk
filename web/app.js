@@ -124,6 +124,8 @@ function renderParsedQuery(parsed) {
 }
 
 async function loadFeed() {
+  // 换筛选/搜索 = 换了一份列表，正在连读的队列已经不是用户面前这一页了，先停下来。
+  if(play.on)playStop(true);
   const p=new URLSearchParams({view:state.view,hours:state.hours,lang:state.lang,order:state.order,min_cred:state.minCred,limit:120});
   // 公共全景显式解除画像相关性门槛；个人模式让服务端采用当前画像门槛。
   if(state.mode==="public") p.set("min_rel","0");
@@ -140,9 +142,11 @@ function renderRows() {
   const senior=isSenior();
   $("#rows").innerHTML=state.items.length?state.items.map((c,i)=>`<article class="ev${i===state.selected?" sel":""}" data-i="${i}" tabindex="0">
     <div class="ts">${time(c.last_ts)}</div><div class="cr" style="color:${color(c.cred_code)}">${Math.round(c.cred)}</div>
-    <div class="body"><div class="hl">${esc(hl(c))}</div><div class="meta"><span class="badge b-${c.cred_code}">${credLabel(c.cred_code)}</span><span class="tier t${c.best_tier}">T${c.best_tier}</span><span class="src">${esc(c.headline_src)}</span><span class="gcount">${senior?`${c.n_groups} 家媒体在说`:`${c.n_groups}源/${c.n_items}篇`}</span>${(c.languages||[]).map(x=>`<span class="tier">${esc(x.toUpperCase())}</span>`).join("")}${c.topics.map(t=>`<span class="topic">#${esc(topicLabels[t]||t)}</span>`).join("")}${c.doubt_code&&c.doubt_code!=="CLEAR"?`<span class="doubt d-${c.doubt_code}" title="存疑度 ${c.doubt}/100：${esc((c.doubt_detail?.reasons||[]).map(r=>r.reason).join("；"))}">${doubtLabel(c.doubt_code)} ${senior?"":Math.round(c.doubt)}</span>`:""}${c.llm?.red_flags?.length?`<span class="flag">⚑${c.llm.red_flags.length}</span>`:""}</div>${senior?`<button class="sr-read" data-sr-read="${i}" title="朗读这条标题">🔊 朗读这条</button>`:""}<div class="meter"><i style="width:${c.cred}%;background:${color(c.cred_code)}"></i></div></div></article>`).join(""):`<div class="note" style="padding:30px;text-align:center">当前筛选条件下没有事件</div>`;
+    <div class="body"><div class="hl">${esc(hl(c))}</div><div class="meta"><span class="badge b-${c.cred_code}">${credLabel(c.cred_code)}</span><span class="tier t${c.best_tier}">T${c.best_tier}</span><span class="src">${esc(c.headline_src)}</span><span class="gcount">${senior?`${c.n_groups} 家媒体在说`:`${c.n_groups}源/${c.n_items}篇`}</span>${(c.languages||[]).map(x=>`<span class="tier">${esc(x.toUpperCase())}</span>`).join("")}${c.topics.map(t=>`<span class="topic">#${esc(topicLabels[t]||t)}</span>`).join("")}${c.doubt_code&&c.doubt_code!=="CLEAR"?`<span class="doubt d-${c.doubt_code}" title="存疑度 ${c.doubt}/100：${esc((c.doubt_detail?.reasons||[]).map(r=>r.reason).join("；"))}">${doubtLabel(c.doubt_code)} ${senior?"":Math.round(c.doubt)}</span>`:""}${c.llm?.red_flags?.length?`<span class="flag">⚑${c.llm.red_flags.length}</span>`:""}</div>${senior?`<button class="sr-read" data-sr-read="${i}" title="从这条开始，一条接一条念下去">🔊 从这条开始念</button>`:""}<div class="meter"><i style="width:${c.cred}%;background:${color(c.cred_code)}"></i></div></div></article>`).join(""):`<div class="note" style="padding:30px;text-align:center">当前筛选条件下没有事件</div>`;
   document.querySelectorAll(".ev").forEach(n=>n.onclick=()=>select(+n.dataset.i));
-  document.querySelectorAll("[data-sr-read]").forEach(b=>b.onclick=e=>{e.stopPropagation();speak(hl(state.items[+b.dataset.srRead]),b);});
+  // 卡片上的朗读键改成「从这条开始连读」：老人的诉求是听下去，不是听一条。
+  document.querySelectorAll("[data-sr-read]").forEach(b=>b.onclick=e=>{e.stopPropagation();playStart(+b.dataset.srRead);});
+  playPaint();   // 重绘后把高亮/播报条状态贴回去
 }
 // 中文 / 原文 切换：只改展示，不重新拉数据。重绘列表并重开当前详情（详情会重新取 *_zh）。
 function syncDispBtn(){const b=$("#btn-lang");if(!b)return;b.textContent=state.disp==="zh"?"🌐 原文":"🌐 中文";b.classList.toggle("on",state.disp==="orig");b.title=state.disp==="zh"?"当前：默认全中文 · 点击查看原文":"当前：显示原文 · 点击切回中文";}
@@ -175,6 +179,7 @@ function applySenior(){document.body.classList.toggle("senior",isSenior());apply
 function toggleSenior(){
   const on=!isSenior();
   if(on)localStorage.setItem("nd_senior","1");else localStorage.removeItem("nd_senior");
+  if(!on)playStop(true);   // 回标准版就别继续念了，播报条也随之收起
   applySenior();closeDetail();renderRows();
   window.scrollTo({top:0});$("#stream")?.scrollTo({top:0});
   toast(on?"已开启老人版：大字、护眼配色、可朗读":"已切回标准版");
@@ -204,17 +209,20 @@ async function ttsProbeCloud(){
 }
 function cloudStop(){ if(_cloudAudio){_cloudAudio.pause();_cloudAudio.src="";_cloudAudio=null;} }
 // 返回 true 表示云端接手了；false 表示调用方该走浏览器语音。
-async function cloudSpeak(text,btn){
+async function cloudSpeak(text,btn,done){
   if(_cloudTts===false||_cloudTts===null)return false;
+  const gen=_ttsGen;   // 合成要等网络往返，期间用户可能已按停止/跳条
   try{
     const r=await api("/api/tts",{method:"POST",headers:{"Content-Type":"application/json"},
                                  body:JSON.stringify({text})});
     if(r.usage)_cloudTts=(r.usage.remaining_items>0&&r.usage.remaining_chars>0)?r.usage:false;
+    if(gen!==_ttsGen)return true;             // 已被停掉：别再出声，也别退回浏览器语音
     if(!r.ok||!r.audio)return false;          // 超限/未配置/上游失败 → 交回浏览器语音
     cloudStop();
     const a=new Audio(r.audio);
     _cloudAudio=a;_speakingBtn=btn||null;if(btn)btn.classList.add("speaking");
-    a.onended=a.onerror=()=>{if(_speakingBtn===btn){btn?.classList.remove("speaking");_speakingBtn=null;}if(_cloudAudio===a)_cloudAudio=null;};
+    // 播放出错也当作念完：连读时宁可跳到下一条，不能卡在这条上不动。
+    a.onended=a.onerror=()=>{if(_speakingBtn===btn){btn?.classList.remove("speaking");_speakingBtn=null;}if(_cloudAudio===a)_cloudAudio=null;if(done)done();};
     await a.play();
     return true;
   }catch(_){ return false; }
@@ -235,31 +243,145 @@ function ttsInit(){
   window.speechSynthesis.onvoiceschanged=ttsRefreshVoices;  // 多数浏览器异步返回语音
 }
 let _speakingBtn=null;
+// 每次停止/换条都自增。cancel() 会立刻触发上一条的 onend，如果不认这个代号，
+// 那次 onend 会被误当成「这条念完了」而连读自动跳下一条 —— 停止键会变成快进键。
+let _ttsGen=0;
 function ttsStop(){
+  _ttsGen++;
   cloudStop();
   if(ttsSupported())window.speechSynthesis.cancel();
   if(_speakingBtn){_speakingBtn.classList.remove("speaking");_speakingBtn=null;}
 }
-// 入口：先试云端，云端不接手（未配置/超限/失败）再用浏览器语音。
-async function speak(text,btn){
-  // 再点同一个按钮 = 停止；否则停掉上一条再念新的。
-  const playing=_cloudAudio||(ttsSupported()&&window.speechSynthesis.speaking);
-  if(_speakingBtn===btn&&playing){ttsStop();return;}
-  ttsStop();
-  if(await cloudSpeak(text,btn))return;
-  browserSpeak(text,btn);
+// 暂停/继续：云端是 <audio>，浏览器语音是 speechSynthesis，两套各自的暂停接口。
+let _srPauseFallback=false;   // 见下：pause() 无效时改用「掐断 + 续播时重念这条」
+function ttsPause(){
+  if(_cloudAudio){_cloudAudio.pause();return;}
+  if(!ttsSupported())return;
+  window.speechSynthesis.pause();
+  // 部分安卓浏览器的 pause() 是空操作，按了还在念。老人按暂停必须真的停下来，
+  // 那就直接掐断，「继续」时从这一条重念（重念一条远好过暂停键没反应）。
+  _srPauseFallback=false;
+  setTimeout(()=>{
+    if(play.paused&&window.speechSynthesis.speaking&&!window.speechSynthesis.paused){
+      _srPauseFallback=true;ttsStop();
+    }
+  },220);
 }
-function browserSpeak(text,btn){
+function ttsResume(){
+  if(_cloudAudio){_cloudAudio.play().catch(()=>{});return;}
+  if(_srPauseFallback){_srPauseFallback=false;if(play.on)playAt(play.i);return;}
+  if(ttsSupported())window.speechSynthesis.resume();
+}
+// 入口：先试云端，云端不接手（未配置/超限/失败）再用浏览器语音。
+// done 在这一条念完时回调（连读靠它接下一条），已被停掉的那次不回调。
+async function speak(text,btn,done){
+  // 再点同一个按钮 = 停止；否则停掉上一条再念新的。连读没有按钮（btn 为空），不参与这个开关。
+  const playing=_cloudAudio||(ttsSupported()&&window.speechSynthesis.speaking);
+  if(btn&&_speakingBtn===btn&&playing){ttsStop();return;}
+  ttsStop();
+  const gen=_ttsGen;
+  const fin=()=>{if(gen===_ttsGen&&done)done();};
+  if(await cloudSpeak(text,btn,fin))return;
+  browserSpeak(text,btn,fin);
+}
+function browserSpeak(text,btn,done){
   if(!ttsSupported()){toast("当前浏览器不支持朗读");return;}
   const u=new SpeechSynthesisUtterance((text||"").replace(/\s+/g," ").trim());
   u.lang="zh-CN";u.rate=0.92;u.pitch=1;
   if(!_ttsVoices.length)ttsRefreshVoices();
   const zh=_ttsVoices.find(v=>/zh|cmn|中文|chinese/i.test((v.lang||"")+" "+(v.name||"")));
   if(zh)u.voice=zh;
-  u.onend=()=>{if(_speakingBtn===btn){btn.classList.remove("speaking");_speakingBtn=null;}};
+  u.onend=()=>{if(_speakingBtn===btn){btn?.classList.remove("speaking");_speakingBtn=null;}if(done)done();};
   u.onerror=u.onend;
   _speakingBtn=btn||null;if(btn)btn.classList.add("speaking");
   window.speechSynthesis.speak(u);
+}
+// 单条朗读（详情页「朗读全文」、标准版按钮）：先把连读关掉，
+// 否则连读的自动跳条会在用户单点的这条上继续往下走。
+function speakOne(text,btn){ if(play.on)playStop(true); speak(text,btn); }
+
+// ---- 连续朗读（老人版）----
+// 老人不该为了听新闻一条一条去点。这里把当前列表整体当成一条播放队列，从头念到尾，
+// 中途可暂停/继续、跳上一条下一条、随时停止。
+// 队列存事件 id 而不是列表下标：换筛选、切中英文都会重绘列表，下标会失效，id 不会
+// （对应事件不在了就跳过）。
+const play={on:false,paused:false,ids:[],i:-1,body:new Map()};
+const SR_SUMMARY_CHARS=160;   // 每条摘要念多少字。约 40 秒/条：再长，听的人会忘了这条在说什么
+
+function playIndexOf(id){return state.items.findIndex(c=>c&&c.id===id);}
+// 摘要要单独取（/api/feed 只给标题，不带正文），取过就缓存，并提前预取下一条，
+// 避免两条之间出现一段莫名的静音。
+async function playBody(id){
+  if(play.body.has(id))return play.body.get(id);
+  let body="";
+  try{
+    const d=await api(`/api/cluster/${encodeURIComponent(id)}`);
+    const lead=(d.items||[]).find(x=>x.source_name===d.headline_src)||(d.items||[])[0];
+    const raw=state.disp==="zh"&&(lead?.body_zh||"").trim()?lead.body_zh:(lead?.body||lead?.summary||"");
+    body=(raw||"").replace(/\s+/g," ").trim();
+    if(body.length>SR_SUMMARY_CHARS){
+      const cut=body.slice(0,SR_SUMMARY_CHARS);
+      const stop=Math.max(cut.lastIndexOf("。"),cut.lastIndexOf("！"),cut.lastIndexOf("？"));
+      body=stop>40?cut.slice(0,stop+1):cut;   // 尽量断在句末，别念半句话
+    }
+  }catch(_){ /* 取不到摘要就只念标题：宁可短，也不能卡住整个连读 */ }
+  play.body.set(id,body);
+  return body;
+}
+// 播报条文案 + 当前卡片高亮。所有状态变化都过这里，避免几处各自刷新出不一致的界面。
+function playPaint(){
+  document.body.classList.toggle("sr-playing",play.on);
+  const bar=$("#sr-player");if(bar)bar.hidden=!play.on;
+  const all=$("#sr-play-all");
+  if(all){all.textContent=play.on?"⏹ 停止连读":"▶ 连读全部";all.classList.toggle("on",play.on);}
+  const t=$("#sr-player-toggle");
+  if(t){t.textContent=play.paused?"▶ 继续":"⏸ 暂停";t.title=play.paused?"接着念":"先停一下，位置不丢";}
+  const k=play.on&&play.ids[play.i]?playIndexOf(play.ids[play.i]):-1;
+  document.querySelectorAll(".ev").forEach(n=>n.classList.toggle("sr-now",k>=0&&+n.dataset.i===k));
+  const pos=$("#sr-player-pos");if(pos)pos.textContent=`第 ${play.i+1} / ${play.ids.length} 条`;
+  const tit=$("#sr-player-title");if(tit)tit.textContent=k>=0?hl(state.items[k]):"…";
+}
+function playScroll(){
+  const k=play.ids[play.i]?playIndexOf(play.ids[play.i]):-1;
+  if(k>=0)document.querySelector(`.ev[data-i="${k}"]`)?.scrollIntoView({behavior:"smooth",block:"center"});
+}
+async function playAt(k){
+  if(!play.on)return;
+  if(k<0)k=0;
+  if(k>=play.ids.length){playStop(true);toast(`这一页 ${play.ids.length} 条都念完了`);return;}
+  play.i=k;play.paused=false;_srPauseFallback=false;
+  const id=play.ids[k];
+  if(playIndexOf(id)<0){playAt(k+1);return;}   // 列表已刷新、这条不在了 → 跳过
+  playPaint();playScroll();
+  const body=await playBody(id);
+  if(!play.on||play.ids[play.i]!==id)return;   // 等摘要的这段时间里被停掉或跳走了
+  const idx=playIndexOf(id);
+  if(idx<0){playAt(k+1);return;}
+  // 念出编号：听的人看不见高亮时，靠这句知道念到哪了。
+  speak(`第${k+1}条。${hl(state.items[idx])}。${body}`,null,
+        ()=>{if(play.on&&play.ids[play.i]===id)setTimeout(()=>playAt(k+1),450);});
+  if(play.ids[k+1])playBody(play.ids[k+1]);    // 预取下一条摘要
+}
+function playStart(from){
+  if(!state.items.length){toast("当前没有可朗读的新闻");return;}
+  if(document.body.classList.contains("no-tts")){toast("这台设备没有可用的中文语音");return;}
+  closeDetail();
+  play.on=true;play.paused=false;play.ids=state.items.map(c=>c.id);
+  playAt(Math.max(0,from||0));
+}
+// 与 ttsStop 分开：ttsStop 只管当前这句（speak 每次都会先调它），
+// playStop 才是整个队列收工。
+function playStop(quiet){
+  const was=play.on;
+  play.on=false;play.paused=false;play.i=-1;_srPauseFallback=false;
+  ttsStop();playPaint();
+  if(was&&!quiet)toast("已停止朗读");
+}
+function playToggle(){
+  if(!play.on)return;
+  play.paused=!play.paused;
+  if(play.paused)ttsPause();else ttsResume();
+  playPaint();
 }
 
 function setMode(mode) {
@@ -352,7 +474,7 @@ async function select(i) {
     <h5>事件时间线</h5><div class="timeline">${ev.timeline.map(x=>`<div class="timeline-row"><time>${time(x.ts)}</time><span>${esc(x.source)}</span><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a></div>`).join("")}</div><div class="note">${esc(ev.limitations||"")}</div>
     <h5>来源链</h5>${[...grouped.official,...grouped.media,...grouped.lead].map(renderSource).join("")}`;
   $("#detail-back").onclick=closeDetail;
-  const srFull=$("#sr-read-full");if(srFull)srFull.onclick=()=>speak(speakText,srFull);
+  const srFull=$("#sr-read-full");if(srFull)srFull.onclick=()=>speakOne(speakText,srFull);
   document.querySelectorAll("[data-asset]").forEach(b=>b.onclick=()=>{if(b.dataset.kind==="company"){$("#q").value=`asset:${b.dataset.asset}`;loadFeed()}else showMarket(b.dataset.asset)});
 }
 
@@ -391,8 +513,13 @@ document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{state.view=b.dataset
 $("#mc").oninput=e=>{$("#mc-val").textContent=e.target.value;state.minCred=+e.target.value;loadFeed()};
 let qt;$("#q").oninput=()=>{clearTimeout(qt);qt=setTimeout(loadFeed,250)};
 $("#btn-about").onclick=()=>showWelcome(false);$("#btn-ai-radar").onclick=showAIRadar;$("#btn-digest").onclick=showDigest;$("#btn-help").onclick=help;$("#btn-command").onclick=openCommands;$("#btn-lang").onclick=toggleDisp;const _bs=$("#btn-senior");if(_bs)_bs.onclick=toggleSenior;
-// 老人版工具条：字号三档 + 一键回标准版。老人版里顶栏那排小按钮不好点，控制项收在这。
+// 老人版工具条：连读 + 字号三档 + 一键回标准版。老人版里顶栏那排小按钮不好点，控制项收在这。
 $("#sr-font-dn").onclick=()=>bumpSrSize(-1);$("#sr-font-up").onclick=()=>bumpSrSize(1);$("#sr-exit").onclick=toggleSenior;
+$("#sr-play-all").onclick=()=>{if(play.on)playStop();else playStart(0);};
+$("#sr-player-toggle").onclick=playToggle;
+$("#sr-player-next").onclick=()=>playAt(play.i+1);
+$("#sr-player-prev").onclick=()=>playAt(play.i-1);
+$("#sr-player-stop").onclick=()=>playStop();
 document.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
 $("#command-palette").onclick=e=>{if(e.target===$("#command-palette"))closeCommands()};
 $("#command-q").oninput=()=>{commandIndex=0;renderCommands()};

@@ -29,14 +29,17 @@
   <div class="clock" id="clock">--:--:--</div>
 </div>
 
-<!-- 老人版专属工具条：只在 body.senior 时显示。字号档位 + 一键回标准版。
-     标准版的密排顶栏对老人不友好，所以老人版把控制项收成三个大按钮。 -->
+<!-- 老人版专属工具条：只在 body.senior 时显示。连读入口 + 字号档位 + 一键回标准版。
+     标准版的密排顶栏对老人不友好，所以老人版把控制项收成几个大按钮。
+     「连读全部」排在最左：老人版的主力用法是听，不是点。 -->
 <div class="sr-bar" id="sr-bar">
+  <button class="sr-chip sr-chip-play" id="sr-play-all"
+          title="从第一条开始连续朗读，中途可以暂停">▶ 连读全部</button>
+  <span class="spacer"></span>
   <span class="sr-bar-label">字号</span>
   <button class="sr-chip" id="sr-font-dn" title="调小字号">A−</button>
   <b class="sr-font-val" id="sr-font-val">大</b>
   <button class="sr-chip" id="sr-font-up" title="调大字号">A＋</button>
-  <span class="spacer"></span>
   <button class="sr-chip sr-chip-alt" id="sr-exit" title="回到标准版">回到标准版</button>
 </div>
 
@@ -89,6 +92,23 @@
 
   <div class="detail empty" id="detail">
     选中一条事件<br>查看来源构成、证据与未知项
+  </div>
+</div>
+
+<!-- 连读播报条：只在老人版且正在播报时出现。
+     为什么是底部整条、不是右下角悬浮圆钮：连读至少需要四个动作（暂停/继续、上一条、
+     下一条、停止），圆钮塞不下；而且听的人必须看得见「读到第几条」，
+     否则分不清是念完了还是卡住了。底部条也避开了右下角这个滑动误触最密集的区域。 -->
+<div class="sr-player" id="sr-player" hidden>
+  <div class="sr-player-now">
+    <b class="sr-player-pos" id="sr-player-pos">第 1 / 1 条</b>
+    <span class="sr-player-title" id="sr-player-title">准备朗读…</span>
+  </div>
+  <div class="sr-player-btns">
+    <button class="sr-pbtn" id="sr-player-prev" title="重听上一条">⏮ 上一条</button>
+    <button class="sr-pbtn sr-pbtn-main" id="sr-player-toggle">⏸ 暂停</button>
+    <button class="sr-pbtn" id="sr-player-next" title="跳到下一条">⏭ 下一条</button>
+    <button class="sr-pbtn sr-pbtn-stop" id="sr-player-stop">⏹ 停止</button>
   </div>
 </div>
 

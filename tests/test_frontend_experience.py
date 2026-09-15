@@ -124,6 +124,49 @@ class FrontendExperienceTests(unittest.TestCase):
         self.assertIn(".sr-bar", senior)
         self.assertIn("$(\"#sr-exit\").onclick=toggleSenior", script)
 
+    def test_senior_mode_reads_the_whole_list_not_one_item_at_a_time(self):
+        """连读：老人不该为了听新闻一条一条去点。锁住三件事 ——
+        ① 队列级的开始/暂停-继续/上下条/停止都在；② 队列存 id 不存下标（列表重绘不会读串）；
+        ③ 停止不能被 cancel() 触发的 onend 误当成『念完了』而变成快进。"""
+        html = (ROOT / "web" / "index.html").read_text()
+        script = (ROOT / "web" / "app.js").read_text()
+        css = (ROOT / "web" / "style.css").read_text()
+
+        # ① 入口与四个控制键：底部整条播报条，不是右下角悬浮圆钮
+        #    （圆钮放不下四个动作，也显示不了「念到第几条」）
+        self.assertIn('id="sr-play-all"', html)
+        for bid in ("sr-player", "sr-player-pos", "sr-player-title",
+                    "sr-player-prev", "sr-player-toggle", "sr-player-next", "sr-player-stop"):
+            self.assertIn(f'id="{bid}"', html, bid)
+        for token in ("function playStart", "function playStop", "function playToggle",
+                      "function playAt", "function playPaint", "function ttsPause",
+                      "function ttsResume"):
+            self.assertIn(token, script, token)
+        self.assertIn('$("#sr-play-all").onclick', script)
+        self.assertIn('$("#sr-player-toggle").onclick=playToggle', script)
+        self.assertIn('$("#sr-player-stop").onclick', script)
+        # 卡片上的朗读键改成「从这条开始连读」，而不是只念这一条
+        self.assertIn("playStart(+b.dataset.srRead)", script)
+        # 暂停要真的能续上（两套播放器各自的暂停接口都得管）
+        self.assertIn("speechSynthesis.pause()", script)
+        self.assertIn("speechSynthesis.resume()", script)
+
+        # ② 队列存事件 id：换筛选/切中英文都会重绘列表，下标会失效，id 不会
+        self.assertIn("play.ids=state.items.map(c=>c.id)", script)
+        self.assertIn("function playIndexOf", script)
+
+        # ③ 停止 ≠ 快进：cancel() 会立刻触发上一条的 onend，必须靠代号作废那次回调
+        self.assertIn("_ttsGen", script)
+        self.assertIn("gen===_ttsGen", script)
+        self.assertIn("_ttsGen++", script)
+
+        # 播报条是老人版专属，且没有中文语音时连入口一起隐藏（优雅降级）
+        self.assertIn("body.senior .sr-player", css)
+        self.assertRegex(css, r"\.sr-player\{\s*display:none")
+        self.assertIn("body.no-tts .sr-chip-play", css)
+        self.assertIn(".ev.sr-now", css)          # 正在念的那条要看得出来
+        self.assertIn("scrollIntoView", script)   # 并自动滚到眼前
+
     def test_two_axes_are_explained_and_never_merged(self):
         """存疑度和可信度必须在页面上被讲成两个轴，否则用户会当成同一套分级。"""
         html = (ROOT / "web" / "index.html").read_text()
