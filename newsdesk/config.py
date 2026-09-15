@@ -106,7 +106,7 @@ TRANSLATE_BASE_URL = os.getenv(
     "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1")
 # key 只从环境变量读，绝不写进源码/仓库。缺失即静默关闭翻译（优雅降级）。
 TRANSLATE_API_KEY = os.getenv("TOKEN_PLAN_KEY", "")
-TRANSLATE_MODEL = os.getenv("NEWSDESK_TRANSLATE_MODEL", "qwen-flash")
+TRANSLATE_MODEL = os.getenv("NEWSDESK_TRANSLATE_MODEL", "qwen3.8-flash")
 TRANSLATE_TIMEOUT = int(os.getenv("NEWSDESK_TRANSLATE_TIMEOUT", "15"))
 TRANSLATE_CONCURRENCY = int(os.getenv("NEWSDESK_TRANSLATE_CONCURRENCY", "4"))
 # 单轮翻译新条数上限：突发大量外文时留到下一轮，防止一次把配额打爆。
