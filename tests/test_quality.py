@@ -42,12 +42,14 @@ class QualityScorecardTests(unittest.TestCase):
         self.assertEqual(soft["status"], "warn", "空库没跑过流水线，提示档应为 warn")
         self.assertEqual(hard["status"], "fail", "空库没跑过流水线，硬档应为 fail")
 
-        # AI 印证率：0.10 是愿望，0.03 是实测天花板（桥接全开 0.0317 / 同脚本补召回
-        # 0.027 / 放宽防漂移 0.026）。愿望写在 detail 里，闸门对准能动的范围。
+        # AI 印证率：这条闸门只管防回归。0.10 是愿望，0.032 是实测天花板
+        # （桥接全开 0.0317 / 同脚本补召回 0.0274 / 放宽防漂移 0.0260），
+        # 所以地板设在 0.025，愿望与上限都写在 detail 里，不藏。
         rate = gates["ai_independent_corroboration_rate"]
-        self.assertEqual(rate["target"], ">=0.03")
+        self.assertEqual(rate["target"], ">=0.025")
         self.assertIn("0.10", rate["detail"])
         self.assertIn("ceiling", rate["detail"])
+        self.assertIn("source mix", rate["detail"])
         # 真正的成因另立一条：85% 的 AI 事件只有一篇稿子，没有第二家可印证。
         # 这条只能靠信源结构改善，写出来才不会有人再去聚类算法里找答案。
         self.assertIn("ai_single_source_share", gates)
