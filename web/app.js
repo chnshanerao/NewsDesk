@@ -13,6 +13,17 @@ const labels = {CONFIRMED: "✅ 多集团报道", LIKELY: "🟢 证据较完整"
 // 一条只有单一官方来源的公报可信度不高但并不可疑；一条被十家转载的『暴涨』稿反之。
 const doubtLabels = {SUSPECT:"⚠ 高度存疑", QUESTIONABLE:"◍ 有存疑点",
                      MINOR:"· 轻微存疑", CLEAR:""};
+// 老人版大白话：把「可信度 / 存疑 / 单源」这类术语换成「几家媒体在说 / 还没证实」。
+// 只在 body.senior 时启用，普通模式仍用上面精确的术语（两版面向不同读者）。
+const srLabels = {CONFIRMED:"✅ 好多家媒体在报", LIKELY:"🟢 有几家媒体在说",
+                  SINGLE:"🟡 目前只有一家说", LOW:"🔴 还说不准，先别全信"};
+const srDoubtShort = {SUSPECT:"⚠ 有可疑", QUESTIONABLE:"◍ 有没说清的",
+                      MINOR:"· 有点疑问", CLEAR:""};
+const srDoubtFull = {SUSPECT:"有明显可疑的地方", QUESTIONABLE:"有些地方还没说清楚",
+                     MINOR:"有一点小疑问", CLEAR:"没发现可疑的地方"};
+// 取当前应展示的档位标签：老人版用大白话，普通版用术语。
+function credLabel(code){ return isSenior() ? (srLabels[code]||labels[code]) : (labels[code]||""); }
+function doubtLabel(code){ return isSenior() ? (srDoubtShort[code]||"") : (doubtLabels[code]||""); }
 const doubtColor = {SUSPECT:"var(--critical)", QUESTIONABLE:"var(--serious)",
                     MINOR:"var(--warn)", CLEAR:"var(--muted)"};
 const gradeLabels = {core:"重点关注", standard:"常规纳入", probation:"观察期",
@@ -126,10 +137,12 @@ async function loadFeed() {
 }
 // 列表渲染独立成函数：切换中文/原文时无需重新拉取，直接用 state.items 重绘。
 function renderRows() {
+  const senior=isSenior();
   $("#rows").innerHTML=state.items.length?state.items.map((c,i)=>`<article class="ev${i===state.selected?" sel":""}" data-i="${i}" tabindex="0">
     <div class="ts">${time(c.last_ts)}</div><div class="cr" style="color:${color(c.cred_code)}">${Math.round(c.cred)}</div>
-    <div class="body"><div class="hl">${esc(hl(c))}</div><div class="meta"><span class="badge b-${c.cred_code}">${labels[c.cred_code]}</span><span class="tier t${c.best_tier}">T${c.best_tier}</span><span class="src">${esc(c.headline_src)}</span><span class="gcount">${c.n_groups}源/${c.n_items}篇</span>${(c.languages||[]).map(x=>`<span class="tier">${esc(x.toUpperCase())}</span>`).join("")}${c.topics.map(t=>`<span class="topic">#${esc(topicLabels[t]||t)}</span>`).join("")}${c.doubt_code&&c.doubt_code!=="CLEAR"?`<span class="doubt d-${c.doubt_code}" title="存疑度 ${c.doubt}/100：${esc((c.doubt_detail?.reasons||[]).map(r=>r.reason).join("；"))}">${doubtLabels[c.doubt_code]} ${Math.round(c.doubt)}</span>`:""}${c.llm?.red_flags?.length?`<span class="flag">⚑${c.llm.red_flags.length}</span>`:""}</div><div class="meter"><i style="width:${c.cred}%;background:${color(c.cred_code)}"></i></div></div></article>`).join(""):`<div class="note" style="padding:30px;text-align:center">当前筛选条件下没有事件</div>`;
+    <div class="body"><div class="hl">${esc(hl(c))}</div><div class="meta"><span class="badge b-${c.cred_code}">${credLabel(c.cred_code)}</span><span class="tier t${c.best_tier}">T${c.best_tier}</span><span class="src">${esc(c.headline_src)}</span><span class="gcount">${senior?`${c.n_groups} 家媒体在说`:`${c.n_groups}源/${c.n_items}篇`}</span>${(c.languages||[]).map(x=>`<span class="tier">${esc(x.toUpperCase())}</span>`).join("")}${c.topics.map(t=>`<span class="topic">#${esc(topicLabels[t]||t)}</span>`).join("")}${c.doubt_code&&c.doubt_code!=="CLEAR"?`<span class="doubt d-${c.doubt_code}" title="存疑度 ${c.doubt}/100：${esc((c.doubt_detail?.reasons||[]).map(r=>r.reason).join("；"))}">${doubtLabel(c.doubt_code)} ${senior?"":Math.round(c.doubt)}</span>`:""}${c.llm?.red_flags?.length?`<span class="flag">⚑${c.llm.red_flags.length}</span>`:""}</div>${senior?`<button class="sr-read" data-sr-read="${i}" title="朗读这条标题">🔊 朗读这条</button>`:""}<div class="meter"><i style="width:${c.cred}%;background:${color(c.cred_code)}"></i></div></div></article>`).join(""):`<div class="note" style="padding:30px;text-align:center">当前筛选条件下没有事件</div>`;
   document.querySelectorAll(".ev").forEach(n=>n.onclick=()=>select(+n.dataset.i));
+  document.querySelectorAll("[data-sr-read]").forEach(b=>b.onclick=e=>{e.stopPropagation();speak(hl(state.items[+b.dataset.srRead]),b);});
 }
 // 中文 / 原文 切换：只改展示，不重新拉数据。重绘列表并重开当前详情（详情会重新取 *_zh）。
 function syncDispBtn(){const b=$("#btn-lang");if(!b)return;b.textContent=state.disp==="zh"?"🌐 原文":"🌐 中文";b.classList.toggle("on",state.disp==="orig");b.title=state.disp==="zh"?"当前：默认全中文 · 点击查看原文":"当前：显示原文 · 点击切回中文";}
@@ -153,6 +166,64 @@ async function toggleAdmin(){
     localStorage.setItem("nd_admin","1");
     applyAdmin();toast("已进入管理模式");
   }catch(e){toast(`校验失败：${e.message}`);}
+}
+
+// ---- 老人版模式 ----
+// 浅色高对比 + 大字 + 大白话 + 朗读。开关只存 localStorage，纯前端，不动数据/服务端。
+function isSenior(){return localStorage.getItem("nd_senior")==="1";}
+function syncSeniorBtn(){const b=$("#btn-senior");if(!b)return;const on=isSenior();b.textContent=on?"👓 标准版":"👓 老人版";b.classList.toggle("on",on);b.title=on?"当前：老人版（大字·朗读）· 点击切回标准版":"切换到老人版：浅色高对比、大字、可朗读";}
+function applySenior(){document.body.classList.toggle("senior",isSenior());syncSeniorBtn();}
+function toggleSenior(){
+  const on=!isSenior();
+  if(on)localStorage.setItem("nd_senior","1");else localStorage.removeItem("nd_senior");
+  applySenior();renderRows();if(state.selected>=0)select(state.selected);
+  toast(on?"已开启老人版：大字、浅色、可朗读":"已切回标准版");
+}
+// 首次访问轻问一句要不要开老人版（用独立 flag，问过一次就不再打扰）。
+function askSenior(){
+  if(isSenior()||localStorage.getItem("nd_seniorAsked"))return;
+  localStorage.setItem("nd_seniorAsked","1");
+  const m=modal("需要老人版吗？",`<div class="sr-ask"><p>老人版会把新闻字调大、换成浅色高对比，并给每条加一个「🔊 朗读」按钮，用你设备自带的中文语音念出来。</p><p class="sr-ask-note">完全免费、不联网、随时可关。适合自己看，也适合念给家里长辈听。</p><div class="sr-ask-btns"><button class="btn sr-ask-no">先不用</button><button class="btn sr-ask-yes">开启老人版</button></div></div>`,"sr-ask-modal");
+  m.querySelector(".sr-ask-no").onclick=()=>m.remove();
+  m.querySelector(".sr-ask-yes").onclick=()=>{m.remove();localStorage.setItem("nd_senior","1");applySenior();renderRows();toast("已开启老人版");};
+}
+
+// ---- 朗读（TTS）----
+// 用浏览器自带的 Web Speech API：零成本、纯客户端、用用户设备上的中文语音。
+// 没有中文语音的浏览器加 body.no-tts，朗读按钮自动隐藏（优雅降级，不报错）。
+let _ttsVoices=[];
+function ttsSupported(){return typeof window!=="undefined"&&"speechSynthesis" in window&&"SpeechSynthesisUtterance" in window;}
+function ttsRefreshVoices(){
+  if(!ttsSupported())return;
+  _ttsVoices=window.speechSynthesis.getVoices()||[];
+  const hasZh=_ttsVoices.some(v=>/zh|cmn|中文|chinese/i.test((v.lang||"")+" "+(v.name||"")));
+  // 只有拿到语音列表却无中文语音时才判 no-tts；列表为空(尚未加载)不误判。
+  document.body.classList.toggle("no-tts",_ttsVoices.length>0&&!hasZh);
+}
+function ttsInit(){
+  if(!ttsSupported()){document.body.classList.add("no-tts");return;}
+  ttsRefreshVoices();
+  window.speechSynthesis.onvoiceschanged=ttsRefreshVoices;  // 多数浏览器异步返回语音
+}
+let _speakingBtn=null;
+function ttsStop(){
+  if(ttsSupported())window.speechSynthesis.cancel();
+  if(_speakingBtn){_speakingBtn.classList.remove("speaking");_speakingBtn=null;}
+}
+function speak(text,btn){
+  if(!ttsSupported()){toast("当前浏览器不支持朗读");return;}
+  // 再点同一个按钮 = 停止；否则停掉上一条再念新的。
+  if(_speakingBtn===btn&&window.speechSynthesis.speaking){ttsStop();return;}
+  ttsStop();
+  const u=new SpeechSynthesisUtterance((text||"").replace(/\s+/g," ").trim());
+  u.lang="zh-CN";u.rate=0.92;u.pitch=1;
+  if(!_ttsVoices.length)ttsRefreshVoices();
+  const zh=_ttsVoices.find(v=>/zh|cmn|中文|chinese/i.test((v.lang||"")+" "+(v.name||"")));
+  if(zh)u.voice=zh;
+  u.onend=()=>{if(_speakingBtn===btn){btn.classList.remove("speaking");_speakingBtn=null;}};
+  u.onerror=u.onend;
+  _speakingBtn=btn||null;if(btn)btn.classList.add("speaking");
+  window.speechSynthesis.speak(u);
 }
 
 function setMode(mode) {
@@ -233,9 +304,12 @@ async function select(i) {
   if(preview.length===900) preview=preview.replace(/[，,；;：:\s][^，,；;：:\s]{0,80}$/u,"").trim()+"…";
   const previewNote=`展示${fromBody?"原文正文":"入库摘要"}的前 ${Math.min(4,previewParts.length)} 段，最多 900 字；请以原始新闻为准。`;
   const renderSource=x=>{const k=sourceKind(x);return `<div class="item source-${k.key}"><span class="source-role">${esc(k.label)}</span><span class="it-t">${time(x.published_ts)}</span><div><a class="source-title-link" href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(x.title)} <span aria-hidden="true">↗</span></a><div class="it-s">${esc(x.source_name)} · ${esc(x.grp)} · T${x.tier}</div><div class="source-hint">${esc(k.hint)}</div></div></div>`};
-  $("#detail").className="detail"; $("#detail").innerHTML=`<button class="detail-back" id="detail-back">&times; 关闭详情 <kbd>Esc</kbd></button><div class="row"><span class="badge b-${c.cred_code}">${labels[c.cred_code]}</span><span>${time(c.last_ts)}</span></div>
-    <h2>${esc(hl(c))}</h2>${lead?.url?`<a class="original-cta" href="${esc(lead.url)}" target="_blank" rel="noopener noreferrer"><span>阅读原始新闻</span><b>${esc(lead.source_name||c.headline_src)} ↗</b></a>`:""}<div class="bigscore"><b style="color:${color(c.cred_code)}">${c.cred}</b><span>证据完整度 / 100 · 相关性 ${c.relevance.toFixed(2)}</span><b class="doubt-score" style="color:${doubtColor[c.doubt_code||"CLEAR"]}">${Math.round(c.doubt||0)}</b><span>存疑度 / 100 · ${esc(c.doubt_detail?.label||"无明显存疑")}</span></div><div class="score-disclaimer">左边是证据完整度：来源、交叉报道、内容与时效信号的综合分，不是事件为真的概率。右边是存疑度，只统计主动出现的可疑信号——两个数字回答不同的问题，都不高才是好消息。</div>
-    <h5>存疑判定</h5><div class="doubt-panel d-${c.doubt_code||"CLEAR"}">${(c.doubt_detail?.reasons||[]).length?(c.doubt_detail.reasons).map(r=>`<div class="doubt-row"><b>+${r.points}</b><span>${esc(r.reason)}</span></div>`).join(""):`<div class="note">已查：${esc((c.doubt_detail?.checked||[]).join("、"))} —— 均未命中可疑信号。这不代表内容为真，只代表没有发现主动的可疑迹象。</div>`}</div>
+  const senior=isSenior();
+  // 朗读用的纯文本：标题 + 正文预览（去掉标记），老人版点「朗读全文」念这段。
+  const speakText=`${hl(c)}。${preview?preview.replace(/\s+/g," "):""}`.trim();
+  $("#detail").className="detail"; $("#detail").innerHTML=`<button class="detail-back" id="detail-back">&times; 关闭详情 <kbd>Esc</kbd></button><div class="row"><span class="badge b-${c.cred_code}">${credLabel(c.cred_code)}</span><span>${time(c.last_ts)}</span></div>
+    <h2>${esc(hl(c))}</h2>${lead?.url?`<a class="original-cta" href="${esc(lead.url)}" target="_blank" rel="noopener noreferrer"><span>阅读原始新闻</span><b>${esc(lead.source_name||c.headline_src)} ↗</b></a>`:""}${senior?`<div class="sr-actions"><button class="sr-btn" id="sr-read-full">🔊 朗读全文</button>${lead?.url?`<a class="sr-btn sr-btn-alt" href="${esc(lead.url)}" target="_blank" rel="noopener noreferrer">📖 读原文</a>`:""}</div>`:""}<div class="bigscore"><b style="color:${color(c.cred_code)}">${c.cred}</b><span>${senior?`可靠程度 / 100 · 报的媒体越多越靠上`:`证据完整度 / 100 · 相关性 ${c.relevance.toFixed(2)}`}</span><b class="doubt-score" style="color:${doubtColor[c.doubt_code||"CLEAR"]}">${Math.round(c.doubt||0)}</b><span>${senior?`可疑程度 / 100 · ${esc(srDoubtFull[c.doubt_code||"CLEAR"])}`:`存疑度 / 100 · ${esc(c.doubt_detail?.label||"无明显存疑")}`}</span></div>${senior?`<div class="score-disclaimer">上面两个数字：左边「可靠程度」是几家媒体在报、证据全不全的综合分；右边「可疑程度」是有多少说不通的地方。两个都不高，才是好消息。</div>`:`<div class="score-disclaimer">左边是证据完整度：来源、交叉报道、内容与时效信号的综合分，不是事件为真的概率。右边是存疑度，只统计主动出现的可疑信号——两个数字回答不同的问题，都不高才是好消息。</div>`}
+    <h5>${senior?"有没有可疑":"存疑判定"}</h5><div class="doubt-panel d-${c.doubt_code||"CLEAR"}">${(c.doubt_detail?.reasons||[]).length?(c.doubt_detail.reasons).map(r=>`<div class="doubt-row"><b>+${r.points}</b><span>${esc(r.reason)}</span></div>`).join(""):`<div class="note">${senior?`已经查过了，没发现明显可疑的地方。不过这不代表一定为真，只是没看出问题。`:`已查：${esc((c.doubt_detail?.checked||[]).join("、"))} —— 均未命中可疑信号。这不代表内容为真，只代表没有发现主动的可疑迹象。`}</div>`}</div>
     ${c.entities?.length?`<div class="asset-links">相关实体 / 资产：${c.entities.map(x=>`<button class="chip asset-link" data-asset="${esc(x.symbol||x.entity_id)}" data-kind="${esc(x.kind)}" title="${esc(x.name)} · 命中：${esc(x.matched_terms.join('/'))}">${esc(x.symbol||x.name)}</button>`).join("")}</div>`:""}
     <h5>可追溯断言</h5><div class="claim-list">${ev.claims.length?ev.claims.map(x=>`<div class="claim"><div><span class="claim-status ${x.status}">${claimLabels[x.status]||esc(x.status)}</span> ${esc(x.text)}</div><div class="claim-refs">${x.evidence.map((r,j)=>`<a href="${esc(r.url)}" target="_blank" rel="noopener" title="${esc(r.group)}"><span class="claim-relation ${esc(r.relation||"support")}">${relationLabels[r.relation||"support"]}</span>[${j+1}] ${esc(r.source)} ↗</a>`).join("")}</div></div>`).join(""):`<div class="note">尚未提取出可追溯断言</div>`}</div>
     <h5>主要内容</h5>${preview?`<article class="article-preview">${preview.split("\n\n").map(p=>`<p>${esc(p)}</p>`).join("")}<div class="preview-limit">${esc(previewNote)}</div></article>`:`<div class="article-preview empty-preview">该来源未提供可合法展示的摘要或正文段落。请点击上方“阅读原始新闻”查看全文。</div>`}
@@ -247,6 +321,7 @@ async function select(i) {
     <h5>事件时间线</h5><div class="timeline">${ev.timeline.map(x=>`<div class="timeline-row"><time>${time(x.ts)}</time><span>${esc(x.source)}</span><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a></div>`).join("")}</div><div class="note">${esc(ev.limitations||"")}</div>
     <h5>来源链</h5>${[...grouped.official,...grouped.media,...grouped.lead].map(renderSource).join("")}`;
   $("#detail-back").onclick=closeDetail;
+  const srFull=$("#sr-read-full");if(srFull)srFull.onclick=()=>speak(speakText,srFull);
   document.querySelectorAll("[data-asset]").forEach(b=>b.onclick=()=>{if(b.dataset.kind==="company"){$("#q").value=`asset:${b.dataset.asset}`;loadFeed()}else showMarket(b.dataset.asset)});
 }
 
@@ -320,7 +395,7 @@ async function refresh(){const b=$("#btn-refresh");b.classList.add("busy");try{a
 document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{state.view=b.dataset.view;document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x===b));loadFeed()});
 $("#mc").oninput=e=>{$("#mc-val").textContent=e.target.value;state.minCred=+e.target.value;loadFeed()};
 let qt;$("#q").oninput=()=>{clearTimeout(qt);qt=setTimeout(loadFeed,250)};
-$("#btn-about").onclick=()=>showWelcome(false);$("#btn-changelog").onclick=()=>showChangelog();$("#btn-sources").onclick=showSources;$("#btn-ai-radar").onclick=showAIRadar;$("#btn-research").onclick=showResearch;$("#btn-quality").onclick=showQuality;$("#btn-digest").onclick=showDigest;$("#btn-alerts").onclick=showAlerts;$("#btn-watchlist").onclick=showWatchlist;$("#btn-help").onclick=help;$("#btn-refresh").onclick=refresh;$("#btn-command").onclick=openCommands;$("#btn-lang").onclick=toggleDisp;$("#btn-lock").onclick=toggleAdmin;
+$("#btn-about").onclick=()=>showWelcome(false);$("#btn-changelog").onclick=()=>showChangelog();$("#btn-sources").onclick=showSources;$("#btn-ai-radar").onclick=showAIRadar;$("#btn-research").onclick=showResearch;$("#btn-quality").onclick=showQuality;$("#btn-digest").onclick=showDigest;$("#btn-alerts").onclick=showAlerts;$("#btn-watchlist").onclick=showWatchlist;$("#btn-help").onclick=help;$("#btn-refresh").onclick=refresh;$("#btn-command").onclick=openCommands;$("#btn-lang").onclick=toggleDisp;$("#btn-lock").onclick=toggleAdmin;const _bs=$("#btn-senior");if(_bs)_bs.onclick=toggleSenior;
 document.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
 $("#command-palette").onclick=e=>{if(e.target===$("#command-palette"))closeCommands()};
 $("#command-q").oninput=()=>{commandIndex=0;renderCommands()};
@@ -330,4 +405,8 @@ document.onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.p
 setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString("zh-CN",{hour12:false}),1000);
 async function loadChangelog(){try{const entries=await api("/api/changelog");if(!entries.length)return;const latest=entries[0];const seen=localStorage.getItem("newsdeskChangelogSeen");if(seen!==latest.version){const banner=document.createElement("div");banner.className="changelog-banner";banner.innerHTML=`<span>🆕 <b>v${esc(latest.version)}</b> ${esc(latest.title)}</span><button class="btn changelog-view">查看更新</button><button class="btn changelog-dismiss">✕</button>`;document.body.prepend(banner);banner.querySelector(".changelog-view").onclick=()=>{banner.remove();showChangelog(entries);localStorage.setItem("newsdeskChangelogSeen",latest.version)};banner.querySelector(".changelog-dismiss").onclick=()=>{banner.remove();localStorage.setItem("newsdeskChangelogSeen",latest.version)}}window._changelogData=entries}catch(_){}}
 function showChangelog(entries){entries=entries||window._changelogData||[];if(!entries.length)return toast("暂无更新日志");modal("版本更新记录",`<div class="changelog">${entries.map(e=>`<div class="changelog-entry"><div class="changelog-head"><b>v${esc(e.version)}</b><span>${esc(e.date)}</span><em>${esc(e.title)}</em></div><ul>${e.changes.map(c=>`<li>${esc(c)}</li>`).join("")}</ul></div>`).join("")}</div>`)}
-initFilters(); syncDispBtn(); applyAdmin(); setMode("personal"); loadStats().catch(e=>toast(`加载失败：${e.message}`)); loadMarkets();if(isAdmin()){loadAlertBadge(); loadChangelog(); setInterval(loadAlertBadge,60000);}if(!localStorage.getItem("newsdeskWelcomeSeen"))setTimeout(()=>showWelcome(true),350);setInterval(loadMarkets,120000);
+initFilters(); syncDispBtn(); applySenior(); ttsInit(); applyAdmin(); setMode("personal"); loadStats().catch(e=>toast(`加载失败：${e.message}`)); loadMarkets();if(isAdmin()){loadAlertBadge(); loadChangelog(); setInterval(loadAlertBadge,60000);}
+// 首次访问：先弹「为什么有 NEWSDESK」，关掉后再轻问一句要不要老人版（避免两个弹窗叠加）；
+// 老访客直接问一次（askSenior 自带 flag，问过一次不再打扰）。
+if(!localStorage.getItem("newsdeskWelcomeSeen")){const _wm=showWelcome(true);const _obs=new MutationObserver(()=>{if(!document.body.contains(_wm)){_obs.disconnect();setTimeout(askSenior,450);}});_obs.observe(document.body,{childList:true});}else{setTimeout(askSenior,450);}
+setInterval(loadMarkets,120000);

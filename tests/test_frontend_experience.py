@@ -50,6 +50,32 @@ class FrontendExperienceTests(unittest.TestCase):
         self.assertIn("/api/admin/verify", script)    # 令牌走服务端校验
         self.assertIn("function applyAdmin", script)
 
+    def test_senior_mode_is_public_themed_tts_and_plain(self):
+        """老人版：顶部常驻入口对所有人可见(非 admin-only)、浅色高对比主题、
+        浏览器自带语音朗读、术语换大白话、首访轻问一次。"""
+        html = (ROOT / "web" / "index.html").read_text()
+        script = (ROOT / "web" / "app.js").read_text()
+        css = (ROOT / "web" / "style.css").read_text()
+        # 入口是公共的，不能被 admin-only 隐藏
+        i = html.find('id="btn-senior"')
+        self.assertNotEqual(i, -1, "缺老人版按钮")
+        line = html[html.rfind("<", 0, i):html.find(">", i) + 1]
+        self.assertNotIn("admin-only", line, "老人版入口必须对所有人可见")
+        # 开关 / 主题 / 朗读 / 大白话 的实现都在
+        for token in ("function isSenior", "function applySenior", "function toggleSenior",
+                      "function askSenior", "nd_senior", "srLabels", "function credLabel",
+                      "speechSynthesis", "SpeechSynthesisUtterance", "function speak"):
+            self.assertIn(token, script, token)
+        self.assertIn("好多家媒体在报", script)        # 术语 → 大白话
+        self.assertIn("家媒体在说", script)
+        # 启动时套主题 + 探测语音；按钮接上 toggleSenior
+        self.assertIn("applySenior()", script)
+        self.assertIn("ttsInit()", script)
+        self.assertIn("_bs.onclick=toggleSenior", script)
+        # 浅色高对比主题 + 无中文语音时隐藏朗读按钮(优雅降级)
+        for token in ("body.senior", "body.no-tts", ".sr-read", ".sr-btn"):
+            self.assertIn(token, css, token)
+
     def test_two_axes_are_explained_and_never_merged(self):
         """存疑度和可信度必须在页面上被讲成两个轴，否则用户会当成同一套分级。"""
         html = (ROOT / "web" / "index.html").read_text()

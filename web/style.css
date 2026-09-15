@@ -639,3 +639,111 @@ kbd {
   .welcome-hero { padding: 26px 22px 22px; }
   .mode-banner { flex-wrap: wrap; }
 }
+
+/* ================= 老人版（浅色高对比 · 大字 · 大点击区 · 朗读） =================
+   body.senior 覆盖 :root 自定义属性，把整站翻成白底深字的高对比浅色主题；
+   再逐条覆盖少量写死深色背景的组件（顶栏/事件行/详情/正文预览等）。
+   字号、点击区整体放大；术语换成大白话由 JS 完成，这里只管视觉。
+   浏览器无中文语音时 body.no-tts，朗读按钮自动隐藏（优雅降级，不影响其余功能）。 */
+body.senior{
+  --bg:#ffffff; --bg-1:#f2f5f9; --panel:#ffffff; --panel-2:#e9edf3;
+  --line:#b6bfcb; --line-2:#7c8a9b;
+  --fg:#080b10; --fg-dim:#222b38; --fg-dim2:#46525f;
+  --amber:#8a4f00; --amber-dim:#6d3e00;
+  --good:#0a6b12; --warn:#8a5a00; --serious:#a8400f; --critical:#a3121b;
+  --green:#0a6b12; --yellow:#8a5a00; --red:#a3121b; --blue:#0645ad; --purple:#5b2d8e;
+  font-size:18px;
+}
+/* —— 顶栏 —— */
+body.senior .topbar{ background:#fff; border-bottom:2px solid var(--line-2); height:auto; min-height:54px; flex-wrap:wrap; gap:8px; padding:8px 12px; }
+body.senior .brand b{ font-size:21px; color:var(--amber); }
+body.senior .brand-copy strong{ font-size:14px; color:var(--fg); }
+body.senior .brand-copy small{ display:none; }
+body.senior .clock{ display:none; }
+body.senior .tab{ font-size:17px; padding:9px 16px; border:1px solid var(--line-2); color:var(--fg); }
+body.senior .tab.on{ background:var(--amber); color:#fff; font-weight:700; }
+body.senior .tab kbd{ display:none; }
+body.senior .search{ font-size:17px; padding:9px 12px; width:240px; background:#fff; border:2px solid var(--line-2); color:var(--fg); }
+body.senior .btn{ font-size:16px; padding:9px 14px; background:#fff; color:var(--fg); border:2px solid var(--line-2); border-radius:5px; }
+body.senior .btn:hover{ background:var(--panel-2); border-color:var(--amber); color:var(--fg); }
+body.senior .btn.on{ background:var(--amber); color:#fff; border-color:var(--amber); }
+body.senior .btn kbd{ display:none; }
+/* —— 横幅 / 行情 / KPI —— */
+body.senior .mode-banner{ background:var(--bg-1); color:var(--fg); font-size:15px; border-bottom:1px solid var(--line); }
+body.senior .market-strip{ background:var(--bg-1); border-bottom:1px solid var(--line); }
+body.senior .market-strip>b{ color:var(--amber); }
+body.senior .kpi{ background:var(--bg-1); }
+body.senior .kpi .k{ font-size:13px; color:var(--fg-dim); }
+body.senior .kpi .v{ font-size:22px; }
+body.senior .kpi .s{ font-size:12px; }
+/* —— 侧栏 —— */
+body.senior .side{ width:212px; background:var(--bg-1); border-right:2px solid var(--line); }
+body.senior .side h4{ font-size:14px; color:var(--fg-dim); letter-spacing:.5px; }
+body.senior .chip{ font-size:16px; padding:9px 12px; color:var(--fg); border:1px solid var(--line); margin-bottom:4px; }
+body.senior .chip.on{ background:var(--amber); color:#fff; border-color:var(--amber); }
+body.senior .chip em{ color:inherit; opacity:.75; font-size:14px; }
+body.senior .side .note{ font-size:13px; }
+/* —— 事件流 —— */
+body.senior .stream-head{ background:var(--bg-1); color:var(--fg); font-size:15px; padding:8px 12px; border-bottom:1px solid var(--line); }
+body.senior .stream-head .hint{ display:none; }
+body.senior .ev{ grid-template-columns:80px 50px 1fr; gap:10px; padding:14px 12px; border-bottom:1px solid var(--line); }
+body.senior .ev:hover{ background:#eef2f7; }
+body.senior .ev.sel{ background:#e6edf6; border-left:4px solid var(--amber); }
+body.senior .ev .ts{ font-size:14px; color:var(--fg-dim); }
+body.senior .ev .cr{ font-size:18px; }
+body.senior .ev .hl{ font-size:19px; line-height:1.45; color:var(--fg); -webkit-line-clamp:3; }
+body.senior .ev.sel .hl{ color:#000; }
+body.senior .ev .meta{ font-size:15px; color:var(--fg-dim); gap:8px; margin-top:6px; }
+body.senior .ev .meta .tier{ display:none; }   /* 隐藏 T1/EN 这类术语标签，减负 */
+body.senior .badge{ font-size:15px; padding:3px 9px; border-radius:4px; }
+body.senior .b-CONFIRMED{ background:#dff5e0; color:#0a5c12; }
+body.senior .b-LIKELY{ background:#fdf0d2; color:#7a4f00; }
+body.senior .b-SINGLE{ background:#fbe6da; color:#8a3a12; }
+body.senior .b-LOW{ background:#fadede; color:#8f1017; }
+body.senior .doubt{ font-size:14px; }
+body.senior .doubt.d-SUSPECT{ color:var(--critical); }
+body.senior .src,.gcount{ color:var(--fg-dim); }
+body.senior .meter{ height:6px; background:#d6dce4; margin-top:8px; }
+/* 每条的「朗读这条」大按钮 */
+body.senior .sr-read{ margin-top:9px; padding:11px 16px; font-size:17px; font-weight:700; color:#fff; background:var(--blue); border:2px solid var(--blue); border-radius:6px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+body.senior .sr-read:hover{ filter:brightness(1.1); }
+body.senior .sr-read.speaking{ background:var(--good); border-color:var(--good); }
+/* —— 详情面板 —— */
+body.senior .detail{ background:#fff; border-left:2px solid var(--line-2); }
+body.senior .detail-back{ background:#fff; color:var(--amber); border-bottom:2px solid var(--line-2); font-size:17px; padding:12px 14px; }
+body.senior .detail-back:hover{ background:var(--panel-2); color:#000; }
+body.senior .detail .row{ font-size:15px; color:var(--fg-dim); }
+body.senior .detail h2{ font-size:23px; line-height:1.4; color:#000; }
+body.senior .detail h5{ font-size:15px; color:var(--amber); letter-spacing:.5px; }
+body.senior .original-cta{ padding:16px; }
+body.senior .original-cta span{ font-size:14px; }
+body.senior .original-cta b{ font-size:17px; }
+body.senior .bigscore b{ font-size:34px; }
+body.senior .bigscore span{ font-size:14px; color:var(--fg-dim); }
+body.senior .score-disclaimer{ font-size:14px; line-height:1.6; color:var(--fg-dim); }
+body.senior .doubt-row{ font-size:16px; }
+body.senior .doubt-panel .note{ font-size:15px; }
+body.senior .article-preview{ background:#fff; border:2px solid var(--line-2); border-left:6px solid var(--blue); }
+body.senior .article-preview p{ color:#0b0e13; font-size:20px; line-height:1.9; }
+body.senior .preview-limit{ font-size:12px; color:var(--fg-dim2); }
+body.senior .source-title-link{ font-size:17px; color:var(--blue) !important; }
+body.senior .note{ font-size:14px; color:var(--fg-dim); }
+/* 详情顶部的大动作条：朗读全文 / 读原文 */
+body.senior .sr-actions{ display:flex; gap:12px; flex-wrap:wrap; margin:12px 0; }
+body.senior .sr-btn{ flex:1 1 auto; min-height:56px; display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:14px 20px; font-size:19px; font-weight:700; color:#fff; background:var(--blue); border:2px solid var(--blue); border-radius:8px; cursor:pointer; text-decoration:none; -webkit-tap-highlight-color:transparent; }
+body.senior .sr-btn:hover{ filter:brightness(1.1); text-decoration:none; }
+body.senior .sr-btn.speaking{ background:var(--good); border-color:var(--good); }
+body.senior .sr-btn-alt{ background:var(--amber); border-color:var(--amber); }
+/* —— 弹窗 / 老人版询问 —— */
+body.senior .modal{ background:rgba(20,30,45,.55); }
+body.senior .modal-box{ background:#fff; border:2px solid var(--line-2); }
+body.senior .modal-head b{ font-size:18px; }
+body.senior .modal-body{ font-size:16px; color:var(--fg); }
+.sr-ask p{ font-size:17px; line-height:1.7; color:var(--fg); margin:0 0 12px; }
+.sr-ask .sr-ask-note{ font-size:15px; color:var(--fg-dim); }
+.sr-ask-btns{ display:flex; gap:12px; margin-top:18px; }
+.sr-ask-btns .btn{ flex:1; min-height:52px; font-size:18px; font-weight:700; padding:12px; }
+.sr-ask-yes{ background:var(--amber); color:#fff; border-color:var(--amber); }
+.sr-ask-yes:hover{ filter:brightness(1.08); color:#fff; }
+/* 浏览器没有中文语音 → 隐藏朗读按钮（读原文照常） */
+body.no-tts .sr-read, body.no-tts #sr-read-full{ display:none !important; }
