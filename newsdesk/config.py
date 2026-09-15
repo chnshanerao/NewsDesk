@@ -114,6 +114,12 @@ TRANSLATE_BASE_URL = os.getenv(
 # key 只从环境变量读，绝不写进源码/仓库。缺失即静默关闭翻译（优雅降级）。
 TRANSLATE_API_KEY = os.getenv("TOKEN_PLAN_KEY", "")
 TRANSLATE_MODEL = os.getenv("NEWSDESK_TRANSLATE_MODEL", "qwen3.8-flash")
+# 翻译要不要开推理模型的「思考」。默认关：实测思考占掉 completion 的九成
+# （同一条标题 669 tokens 里 641 是 reasoning），还会吃掉 max_tokens 把译文截断。
+# 详见 translate._translate_one 的实测记录。
+TRANSLATE_THINKING = os.getenv("NEWSDESK_TRANSLATE_THINKING", "0") == "1"
+# 换成不支持该参数的模型时，去掉它重试一次，别让一个优化参数搞死整条翻译链路。
+TRANSLATE_THINKING_OFF_RETRY = os.getenv("NEWSDESK_TRANSLATE_THINKING_RETRY", "1") == "1"
 TRANSLATE_TIMEOUT = int(os.getenv("NEWSDESK_TRANSLATE_TIMEOUT", "15"))
 TRANSLATE_CONCURRENCY = int(os.getenv("NEWSDESK_TRANSLATE_CONCURRENCY", "4"))
 # 单轮翻译新条数上限：突发大量外文时留到下一轮，防止一次把配额打爆。

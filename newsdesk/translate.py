@@ -107,6 +107,16 @@ def _cache_put(conn, rows: list[tuple]) -> None:
     conn.commit()
 
 
+def _post(payload: dict, timeout: int) -> dict:
+    req = urllib.request.Request(
+        config.TRANSLATE_BASE_URL.rstrip("/") + "/chat/completions",
+        json.dumps(payload).encode("utf-8"),
+        {"Authorization": f"Bearer {config.TRANSLATE_API_KEY}",
+         "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
 def _translate_one(text: str, target: str = "en", timeout: int | None = None,
                    max_tokens: int = 200) -> str:
     """调一次翻译 API。失败抛异常，由调用方回退原文。target 决定目标语言与清洗方式。"""
@@ -116,14 +126,30 @@ def _translate_one(text: str, target: str = "en", timeout: int | None = None,
                      {"role": "user", "content": text}],
         "temperature": 0.0,
         "max_tokens": max_tokens,
+        # 翻译不需要推理，而推理模型默认是开着思考的。实测（同一条中文标题、
+        # 同模型同 endpoint，API 自己回的 usage 明细）：
+        #   不带这个参数 completion = 200 / 194 / 669，其中 reasoning_tokens
+        #     占 182 / 176 / 641 —— 九成账单花在看不见的思考上，延迟 3.9–6.8s
+        #   enable_thinking=false  completion = 17 / 15 / 21，延迟 0.95–1.56s
+        # 更要命的是思考会吃掉 max_tokens：标题上限 200、正文上限 1024，
+        # 思考先占掉几百，真正返回的译文就被截断了 —— 那不是贵，是译文不完整。
+        # 注：extra_body 那种写法（OpenAI SDK 的习惯）在这个 endpoint 上被忽略，
+        # 必须放顶层。
+        "enable_thinking": config.TRANSLATE_THINKING,
     }
-    req = urllib.request.Request(
-        config.TRANSLATE_BASE_URL.rstrip("/") + "/chat/completions",
-        json.dumps(payload).encode("utf-8"),
-        {"Authorization": f"Bearer {config.TRANSLATE_API_KEY}",
-         "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout or config.TRANSLATE_TIMEOUT) as r:
-        resp = json.loads(r.read().decode("utf-8"))
+    wait = timeout or config.TRANSLATE_TIMEOUT
+    try:
+        resp = _post(payload, wait)
+    except urllib.error.HTTPError as exc:
+        # 换成非推理模型时这个参数可能不被支持。整条翻译链路不能因为一个
+        # 优化参数而全灭，所以去掉它重试一次；仍失败才交给调用方回退原文。
+        if exc.code != 400 or not config.TRANSLATE_THINKING_OFF_RETRY:
+            raise
+        body = (exc.read() or b"")[:200].decode("utf-8", "replace")
+        if "thinking" not in body.lower() and "parameter" not in body.lower():
+            raise
+        payload.pop("enable_thinking", None)
+        resp = _post(payload, wait)
     _add_usage(resp)
     out = (resp["choices"][0]["message"]["content"] or "").strip()
     # 标题走 clean_title（去引号/尾标点）；正文是多段文本，只做首尾清洗，保留段落。

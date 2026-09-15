@@ -1,5 +1,7 @@
+import io
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest import mock
 
@@ -256,6 +258,63 @@ class DisplayZhTests(unittest.TestCase):
         translate._flush_usage(self.conn, "body")
         self.assertEqual(self.conn.execute(
             "SELECT COUNT(*) c FROM translate_usage").fetchone()["c"], 1)
+
+
+class ThinkingTokenTests(unittest.TestCase):
+    """推理模型默认开着思考，而思考是要付钱的。
+
+    实测同一条中文标题、同模型同 endpoint，API 自己回的 usage 明细：
+      不带 enable_thinking   completion 200/194/669，其中 reasoning 182/176/641
+      enable_thinking=false  completion 17/15/21，延迟从 3.9–6.8s 降到 0.95–1.56s
+    九成账单花在看不见的思考上，而且思考会吃掉 max_tokens 把译文截断。
+    """
+
+    @staticmethod
+    def _resp(text="Nvidia restricts internal use"):
+        return {"choices": [{"message": {"content": text}}],
+                "usage": {"prompt_tokens": 75, "completion_tokens": 17}}
+
+    @staticmethod
+    def _http_error(code, body):
+        return urllib.error.HTTPError(
+            "https://example.test", code, "err", {}, io.BytesIO(body.encode("utf-8")))
+
+    def test_thinking_is_off_by_default(self):
+        with mock.patch.object(translate, "_post", return_value=self._resp()) as post:
+            out = translate._translate_one("消息称英伟达内部限制使用前沿模型", "en")
+        self.assertEqual(out, "Nvidia restricts internal use")
+        payload = post.call_args[0][0]
+        self.assertIs(payload["enable_thinking"], False)
+        self.assertEqual(payload["temperature"], 0.0)
+
+    def test_thinking_can_be_turned_back_on(self):
+        with mock.patch.object(config, "TRANSLATE_THINKING", True), \
+                mock.patch.object(translate, "_post", return_value=self._resp()) as post:
+            translate._translate_one("标题", "en")
+        self.assertIs(post.call_args[0][0]["enable_thinking"], True)
+
+    def test_model_without_the_parameter_retries_without_it(self):
+        # 换成不支持该参数的模型时，不能让一个优化参数搞死整条翻译链路。
+        calls = []
+
+        def fake_post(payload, timeout):
+            calls.append(payload)
+            if len(calls) == 1:
+                raise self._http_error(400, '{"error":"enable_thinking is unsupported"}')
+            return self._resp()
+
+        with mock.patch.object(translate, "_post", side_effect=fake_post):
+            out = translate._translate_one("标题", "en")
+        self.assertEqual(out, "Nvidia restricts internal use")
+        self.assertEqual(len(calls), 2)
+        self.assertNotIn("enable_thinking", calls[1])
+
+    def test_unrelated_http_error_is_not_retried(self):
+        with mock.patch.object(translate, "_post",
+                               side_effect=self._http_error(500, "upstream")) as post:
+            with self.assertRaises(urllib.error.HTTPError):
+                translate._translate_one("标题", "en")
+        self.assertEqual(post.call_count, 1)
 
 
 if __name__ == "__main__":
