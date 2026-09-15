@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import cluster as clustering
 from . import (alerting, article, config, credibility, doubt, entities, evidence,
-               fetch, movements, source_scores, store, verify_llm)
+               fetch, movements, source_scores, store, translate, verify_llm)
 from .normalize import now_ts
 
 
@@ -146,9 +146,19 @@ def _row_to_item(row) -> dict:
         "lang": row["lang"], "published_ts": row["published_ts"],
         "fetched_ts": row["fetched_ts"], "simhash": row["simhash"] or 0,
         "grams": set((row["grams"] or "").split()),
+        "canonical_title": _row_get(row, "canonical_title"),
         "src_topics": [],
         "src_role": "reporting",
     }
+
+
+def _row_get(row, key, default=None):
+    """sqlite3.Row 没有 .get；旧连接可能还没跑 canonical_title 迁移。"""
+    try:
+        val = row[key]
+    except (IndexError, KeyError):
+        return default
+    return default if val is None else val
 
 
 def ingest(conn, reg: dict, only=None, log=print) -> dict:
@@ -161,6 +171,9 @@ def ingest(conn, reg: dict, only=None, log=print) -> dict:
         n_fetched += res["n_items"]
         new = 0
         if res["ok"] and res["items"]:
+            # 可选翻译层：把外文标题译成英文 canonical（默认关；无 key 时 no-op）。
+            # 必须在 insert 之前 —— canonical_title/grams/simhash 要随条目一起落库。
+            translate.enrich(conn, res["items"], log)
             new = store.insert_items(conn, res["items"])
             all_items.extend(res["items"])
         res["n_new"] = new

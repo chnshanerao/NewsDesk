@@ -28,7 +28,16 @@ CREATE TABLE IF NOT EXISTS items (
     cluster_id    TEXT,
     body          TEXT,
     body_state    TEXT,
-    body_ts       INTEGER
+    body_ts       INTEGER,
+    canonical_title TEXT
+);
+CREATE TABLE IF NOT EXISTS translation_cache (
+    hash        TEXT PRIMARY KEY,
+    src_lang    TEXT,
+    original    TEXT NOT NULL,
+    translated  TEXT NOT NULL,
+    model       TEXT,
+    ts          INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_items_pub     ON items(published_ts DESC);
 CREATE INDEX IF NOT EXISTS idx_items_cluster ON items(cluster_id);
@@ -382,7 +391,7 @@ CREATE INDEX IF NOT EXISTS idx_source_scorecards_latest
     ON source_scorecards(source_id,computed_ts DESC);
 """
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 
 def _ensure_column(conn, table, name, declaration):
@@ -502,6 +511,21 @@ def _source_governance(conn):
     conn.executescript(SOURCE_GOVERNANCE_SCHEMA)
 
 
+def _translation_layer(conn):
+    """外文标题英文 canonical + 翻译缓存。原文 title 不动，只加旁路信号。"""
+    _ensure_column(conn, "items", "canonical_title", "TEXT")
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS translation_cache (
+            hash        TEXT PRIMARY KEY,
+            src_lang    TEXT,
+            original    TEXT NOT NULL,
+            translated  TEXT NOT NULL,
+            model       TEXT,
+            ts          INTEGER NOT NULL
+        );
+    """)
+
+
 MIGRATIONS = (
     (1, "baseline", _baseline),
     (2, "evidence_and_source_health", _evidence_health),
@@ -523,6 +547,7 @@ MIGRATIONS = (
     (16, "person_statements", _person_statements),
     (17, "cluster_doubt_axis", _cluster_doubt),
     (18, "source_governance_scorecards", _source_governance),
+    (19, "canonical_title_translation", _translation_layer),
 )
 
 
@@ -583,14 +608,15 @@ def insert_items(conn, items: list[dict]) -> int:
             it["title"], it.get("summary", ""), it.get("url", ""), it.get("lang", "zh"),
             it.get("published_ts"), it.get("fetched_ts"), it.get("simhash"),
             " ".join(sorted(it.get("grams", ()))), it.get("cluster_id"),
+            it.get("canonical_title"),
         )
         for it in items
     ]
     cur = conn.executemany(
         "INSERT OR IGNORE INTO items "
         "(id,source_id,source_name,tier,grp,title,summary,url,lang,"
-        " published_ts,fetched_ts,simhash,grams,cluster_id) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        " published_ts,fetched_ts,simhash,grams,cluster_id,canonical_title) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         rows,
     )
     conn.commit()

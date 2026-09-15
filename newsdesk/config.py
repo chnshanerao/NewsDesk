@@ -96,6 +96,26 @@ LLM_MODEL = os.getenv("NEWSDESK_LLM_MODEL", "qwen-plus")
 LLM_MAX_CLUSTERS = int(os.getenv("NEWSDESK_LLM_TOPN", "25"))
 LLM_CONCURRENCY = int(os.getenv("NEWSDESK_LLM_CONCURRENCY", "4"))
 
+# ---- 入库翻译层（可选，默认关闭）----
+# 把「非中/英」外文标题译成英文 canonical，让它能进英文主聚类与 zh↔en 桥，
+# 从而参与交叉印证。默认关：只有显式设 NEWSDESK_TRANSLATE=1 且配了 key 才生效。
+# 无 key / 报错一律回退原文，绝不阻断抓取。成本护栏见 translate.py。
+TRANSLATE_ENABLED = os.getenv("NEWSDESK_TRANSLATE", "0") == "1"
+TRANSLATE_BASE_URL = os.getenv(
+    "NEWSDESK_TRANSLATE_BASE",
+    "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1")
+# key 只从环境变量读，绝不写进源码/仓库。缺失即静默关闭翻译（优雅降级）。
+TRANSLATE_API_KEY = os.getenv("TOKEN_PLAN_KEY", "")
+TRANSLATE_MODEL = os.getenv("NEWSDESK_TRANSLATE_MODEL", "qwen-flash")
+TRANSLATE_TIMEOUT = int(os.getenv("NEWSDESK_TRANSLATE_TIMEOUT", "15"))
+TRANSLATE_CONCURRENCY = int(os.getenv("NEWSDESK_TRANSLATE_CONCURRENCY", "4"))
+# 单轮翻译新条数上限：突发大量外文时留到下一轮，防止一次把配额打爆。
+TRANSLATE_MAX_PER_RUN = int(os.getenv("NEWSDESK_TRANSLATE_MAX_PER_RUN", "200"))
+# 需要翻译的语言：既不是英文(已 canonical)也不是中文(靠实体词表桥)的外文。
+TRANSLATE_SOURCE_LANGS = frozenset(
+    x for x in os.getenv("NEWSDESK_TRANSLATE_LANGS", "fr,de,pt,es,it,ru,ja,ko").split(",")
+    if x.strip())
+
 SERVER_HOST = os.getenv("NEWSDESK_HOST", "0.0.0.0")
 SERVER_PORT = int(os.getenv("NEWSDESK_PORT", "8899"))
 REFRESH_TOKEN = os.getenv("NEWSDESK_REFRESH_TOKEN", "")

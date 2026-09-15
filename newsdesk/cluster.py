@@ -32,6 +32,16 @@ class DSU:
 NUM_TOKEN_RE = __import__("re").compile(r"^\d+(?:\.\d+)?%?$")
 
 
+def _clust_title(item: dict) -> str:
+    """用于聚类/实体抽取的标题：外文条目优先用英文 canonical，其余用原文。
+
+    grams/simhash 在入库时已按同一 canonical 算过（见 translate.enrich），
+    这里让 features 也吃 canonical，两路信号才对齐。canonical 缺失 → 原文，
+    等价于翻译层关闭时的原行为，零回归。
+    """
+    return item.get("canonical_title") or item["title"]
+
+
 def _nums(item: dict) -> set[str]:
     return {g for g in item["grams"] if NUM_TOKEN_RE.match(g)}
 
@@ -44,8 +54,8 @@ def conflicting(a: dict, b: dict, rare: dict[str, set[str]]) -> str | None:
       『贵州省委主要负责同志职务调整』vs『天津市委…』 → 稀有实体词互斥
     这两类不拦住，交叉印证数就是假的，整个可信度体系跟着失真。
     """
-    fa = a.get("xl_features") or features(a["title"])
-    fb = b.get("xl_features") or features(b["title"])
+    fa = a.get("xl_features") or features(_clust_title(a))
+    fb = b.get("xl_features") or features(_clust_title(b))
     na, nb = _nums(a), _nums(b)
     cross_script = ((fa.has_cjk and fb.has_latin) or
                     (fb.has_cjk and fa.has_latin))
@@ -76,8 +86,8 @@ def conflicting(a: dict, b: dict, rare: dict[str, set[str]]) -> str | None:
 
 def similarity(a: dict, b: dict) -> float:
     ga, gb = a["grams"], b["grams"]
-    cross = bridge_score(a.get("xl_features") or features(a["title"]),
-                         b.get("xl_features") or features(b["title"]))
+    cross = bridge_score(a.get("xl_features") or features(_clust_title(a)),
+                         b.get("xl_features") or features(_clust_title(b)))
     if not ga or not gb:
         return cross
     j = jaccard(ga, gb)
@@ -113,7 +123,7 @@ def build(items: list[dict]) -> dict[str, list[dict]]:
     }
     xl_index: dict[str, list[int]] = defaultdict(list)
     for it in items:
-        it["xl_features"] = features(it["title"])
+        it["xl_features"] = features(_clust_title(it))
 
     seed_of: dict[int, int] = {}   # root -> seed item index
     rejected = 0
