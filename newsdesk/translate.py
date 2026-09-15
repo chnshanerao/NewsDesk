@@ -173,16 +173,19 @@ def enrich(conn, items: list[dict], log=print) -> dict:
 
 
 def _fill_zh(conn, table: str, src_col: str, dst_col: str, *, budget: int,
-             max_tokens: int, stat: dict, stat_key: str, log=print) -> None:
+             max_tokens: int, stat: dict, stat_key: str, order_col: str,
+             log=print) -> None:
     """把 table.src_col 的外文文本译成中文写进 dst_col（dst_col IS NULL 的行）。
 
     - 已是中文的行：直接把原文拷进 dst_col（不调 API），让 NULL 查询逐轮收敛、不再重扫。
     - 外文行：先查缓存，未命中且预算内才真译；超预算留到下一轮（dst_col 仍为 NULL）。
+    - 按 order_col 倒序取：库里有上万条历史簇，必须先补当前可见窗口（最新的），
+      而不是被老旧不可见的簇耗光单轮预算。
     """
     rows = conn.execute(
         f"SELECT id, {src_col} AS txt FROM {table} "
         f"WHERE {dst_col} IS NULL AND {src_col} IS NOT NULL AND {src_col} != '' "
-        f"LIMIT ?", (budget * 5,)).fetchall()
+        f"ORDER BY {order_col} DESC LIMIT ?", (budget * 5,)).fetchall()
     if not rows:
         return
 
@@ -246,10 +249,10 @@ def enrich_display_zh(conn, log=print) -> dict:
         return stat
     _fill_zh(conn, "clusters", "headline", "headline_zh",
              budget=config.TRANSLATE_ZH_MAX_PER_RUN, max_tokens=300,
-             stat=stat, stat_key="headline", log=log)
+             stat=stat, stat_key="headline", order_col="last_ts", log=log)
     _fill_zh(conn, "items", "body", "body_zh",
              budget=config.TRANSLATE_ZH_BODY_MAX_PER_RUN, max_tokens=1024,
-             stat=stat, stat_key="body", log=log)
+             stat=stat, stat_key="body", order_col="body_ts", log=log)
     if stat["headline"] or stat["body"] or stat["failed"]:
         log(f"  [译中] 标题 {stat['headline']} / 正文 {stat['body']} / "
             f"缓存命中 {stat['cached']} / 失败 {stat['failed']}")
