@@ -283,25 +283,31 @@ function researchForm(){return '<div class="research-search"><input id="research
 async function runResearch(){const q=$("#research-q").value.trim(),box=$("#research-results");if(q.length<2){box.innerHTML='<div class="note">请输入至少两个字符。</div>';return}box.innerHTML='<div class="note">正在检索 claim 证据库…</div>';const d=await api("/api/research?q="+encodeURIComponent(q)+"&limit=10"),labels={independently_reported:"独立印证",official_statement:"机构声明",single_report:"单源待证",disputed:"存在反向证据"},rels={support:"支持",refute:"反驳",unknown:"待判定"};if(!d.findings.length){box.innerHTML='<div class="empty">没有找到足够接近且带原始引文的结论。请换用公司、模型或技术关键词。</div>';return}box.innerHTML='<div class="research-summary">'+d.findings.length+' 条可引用结论 · 引用覆盖率 '+Math.round(d.citation_coverage*100)+'%</div>'+d.findings.map((x,i)=>'<article class="research-finding"><div class="research-number">'+String(i+1).padStart(2,"0")+'</div><div><span class="claim-status '+esc(x.status)+'">'+esc(labels[x.status]||x.status)+'</span><p>'+esc(x.sentence)+'</p><div class="research-cites">'+x.citations.map((c,j)=>'<a href="'+esc(c.url)+'" target="_blank" rel="noopener noreferrer"><b><span class="claim-relation '+esc(c.relation||"support")+'">'+esc(rels[c.relation||"support"])+'</span>['+(j+1)+'] '+esc(c.source)+'</b><q>'+esc(c.quote)+'</q><small>'+esc(c.quote_field)+' '+c.quote_start+'–'+c.quote_end+' · '+esc(c.quote_hash)+'</small></a>').join("")+'</div></div></article>').join("")+'<div class="research-limits">'+d.limitations.map(x=>'<div>• '+esc(x)+'</div>').join("")+'</div>'}
 function showResearch(){modal("引用研究工作台",researchForm());setTimeout(()=>{$("#research-run").onclick=runResearch;$("#research-q").onkeydown=e=>{if(e.key==="Enter")runResearch()};$("#research-q").focus()},0)}
 const DG_KIND={summary:"发生了什么",so_what:"对你意味着",red:"⚑ 可疑点",verify:"自己核实",pos:"正向信号",neg:"风险信号"};
-function dgEvent(c){const meta=[`${c.n_groups} 个独立信源 / ${c.n_items} 篇`,`T${c.best_tier} ${esc(c.src)}`,c.ts,`相关性 ${c.relevance.toFixed(2)}`].join(" · ");
+function dgEvent(c){const meta=[`${c.n_groups} 个独立信源`,`${c.n_items} 篇报道`,esc(c.src),c.ts].map(x=>`<span>${x}</span>`).join("");
   const pts=(c.points||[]).map(p=>`<div class="dg-pt dg-${p.kind}"><b>${esc(DG_KIND[p.kind]||p.label)}</b><span>${esc(p.text)}</span></div>`).join("");
   return `<article class="dg-card"><div class="dg-rail" style="background:${color(c.cred_code)}"></div><div class="dg-main">
-    <div class="dg-head">${c.rank?`<span class="dg-rank">${c.rank}</span>`:""}<span class="badge b-${c.cred_code}">${labels[c.cred_code]}</span><span class="dg-score">${c.cred}分 · ${esc(c.cred_label)}</span></div>
+    <div class="dg-head">${c.rank?`<span class="dg-rank">${c.rank}</span>`:""}<span class="badge b-${c.cred_code}">${labels[c.cred_code]}</span><span class="dg-score">${c.cred} 分 · ${esc(c.cred_label)}</span></div>
     <div class="dg-title">${esc(hl(c))}</div>
     <div class="dg-meta">${meta}</div>${pts?`<div class="dg-pts">${pts}</div>`:""}
     ${c.url?`<a class="dg-orig" href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">阅读原始新闻 ↗</a>`:""}</div></article>`;}
 async function showDigest(){
   const d=await api("/api/digest?format=json");
-  const sec=(title,sub,inner)=>`<section class="dg-sec"><h4>${title}${sub?`<em>${esc(sub)}</em>`:""}</h4>${inner}</section>`;
+  const admin=document.body.classList.contains("admin");
+  const sec=(n,title,sub,inner)=>`<section class="dg-sec"><h4><span class="dg-n">${n}</span>${title}${sub?`<em>${esc(sub)}</em>`:""}</h4>${inner}</section>`;
   const signal=d.signal.length?d.signal.map(dgEvent).join(""):`<div class="note">本窗口内没有同时满足可信度与相关性门槛的事件。</div>`;
   const unv=d.unverified.length?d.unverified.map(dgEvent).join(""):`<div class="note">无。</div>`;
   const noise=d.noise.length?`<div class="dg-noise">${d.noise.map(n=>`<div>🚫 <s>${esc(hl(n))}</s> <em>${esc(n.why)}</em></div>`).join("")}</div>`:`<div class="note">无。</div>`;
-  const health=`<table class="dg-health"><thead><tr><th>信源</th><th>层级</th><th>状态</th><th>条数</th><th>延迟</th></tr></thead><tbody>${d.health.map(h=>`<tr class="${h.ok?"":"bad"}"><td>${esc(h.name)}</td><td>T${h.tier}</td><td>${h.ok?"✅":"❌ "+esc(h.err||"")}</td><td>${h.items}</td><td>${h.ms}ms</td></tr>`).join("")}</tbody></table>`;
-  const body=`<div class="dg-bar">窗口近 ${d.window_hours}h · 事件 ${d.counts.events} 个 · 入选 ${d.counts.signal} · 噪音过滤 ${d.counts.noise} · 画像「${esc(d.profile||"")}」</div>`
-    +sec("① 值得你看的","可信度 × 相关性 排序",signal)
-    +sec("② 单源待证","只有一家在说，别急着当事实",unv)
-    +sec("③ 被过滤的噪音","抽样",noise)
-    +sec("④ 信源健康","",health);
+  const okN=d.health.filter(h=>h.ok).length,totN=d.health.length;
+  const hero=`<div class="dg-hero"><div class="dg-hero-top"><span class="dg-win">近 ${d.window_hours} 小时 · 为你精选</span><span class="dg-profile">${esc(d.profile||"")}</span></div>
+    <div class="dg-stats"><div class="dg-stat"><b>${d.counts.events}</b><span>抓取事件</span></div><div class="dg-stat ok"><b>${d.counts.signal}</b><span>值得看</span></div><div class="dg-stat mute"><b>${d.counts.noise}</b><span>过滤噪音</span></div><div class="dg-stat"><b>${okN}/${totN}</b><span>信源在线</span></div></div></div>`;
+  let body=hero
+    +sec("①","值得你看的","可信度 × 相关性 排序",signal)
+    +sec("②","单源待证","只有一家在说，别急着当事实",unv)
+    +sec("③","被过滤的噪音","抽样",noise);
+  if(admin){
+    const health=`<table class="dg-health"><thead><tr><th>信源</th><th>层级</th><th>状态</th><th>条数</th><th>延迟</th></tr></thead><tbody>${d.health.map(h=>`<tr class="${h.ok?"":"bad"}"><td>${esc(h.name)}</td><td>T${h.tier}</td><td>${h.ok?"✅":"❌ "+esc(h.err||"")}</td><td>${h.items}</td><td>${h.ms}ms</td></tr>`).join("")}</tbody></table>`;
+    body+=sec("④","信源健康","仅管理模式可见",health);
+  }
   modal(`每日简报 · ${esc(d.generated_at)}`,body,"digest-modal");}
 async function loadAlertBadge(){try{const d=await api("/api/alert-events?unread=1&limit=100");const b=$("#alert-badge");b.textContent=d.unread;b.hidden=!d.unread}catch(_){}}
 async function showAlerts(){const [d,ev]=await Promise.all([api("/api/alerts"),api("/api/alert-events?limit=30")]);modal("事件监控",`<div class="alert-create"><input id="alert-name" class="search" placeholder="规则名称"><button class="btn" id="save-alert">保存当前筛选</button></div><div class="note">规则按当前搜索词、主题、语言和证据门槛捕获刷新后出现的新事件。</div>${ev.events.length?`<h5>最近命中 <button class="btn" id="alerts-read">全部已读</button></h5><div class="alert-events">${ev.events.map(x=>`<button class="alert-event ${x.read_ts?"read":""}" data-headline="${esc(x.headline)}"><span>${esc(x.alert_name)}</span><b>${esc(x.headline)}</b><em>${Math.round(x.cred)}分 · ${time(x.event_ts)}</em></button>`).join("")}</div>`:""}<h5>监控规则</h5><div class="alert-list">${d.alerts.length?d.alerts.map(a=>`<div class="alert-row"><div><b>${esc(a.name)}</b><span>${esc(a.q||"全部关键词")} · ${esc(a.topic)} · ${esc(a.lang)} · ≥${a.min_cred}</span></div><strong>${a.match_count_24h}</strong><button class="btn alert-delete" data-id="${a.id}">删除</button></div>`).join(""):`<div class="empty">尚无监控规则</div>`}</div>`);setTimeout(()=>{$("#save-alert").onclick=async()=>{const name=$("#alert-name").value.trim();if(!name)return toast("请输入规则名称");await api("/api/alerts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,q:$("#q").value.trim(),topic:state.topic,lang:state.lang,min_cred:state.minCred})});document.querySelector(".modal")?.remove();showAlerts()};$("#alerts-read")&&($("#alerts-read").onclick=async()=>{await api("/api/alert-events/read",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});document.querySelector(".modal")?.remove();loadAlertBadge();showAlerts()});document.querySelectorAll(".alert-event").forEach(b=>b.onclick=()=>{document.querySelector(".modal")?.remove();$("#q").value=b.dataset.headline;loadFeed()});document.querySelectorAll(".alert-delete").forEach(b=>b.onclick=async()=>{await api(`/api/alerts/${b.dataset.id}`,{method:"DELETE"});document.querySelector(".modal")?.remove();showAlerts()})},0)}
