@@ -240,6 +240,23 @@ class DisplayZhTests(unittest.TestCase):
         # en 目标保持旧 key（不含前缀），存量 canonical 缓存不失效
         self.assertEqual(h_en, translate._hash("fr", "La BCE abaisse ses taux"))
 
+    def test_usage_recorded_and_flushed(self):
+        """_add_usage 累加 API 回传 token，_flush_usage 落一行后清零。"""
+        with translate._usage_lock:
+            translate._usage.update(prompt=0, completion=0, calls=0)
+        translate._add_usage({"usage": {"prompt_tokens": 200, "completion_tokens": 500}})
+        translate._add_usage({"usage": {"prompt_tokens": 100, "completion_tokens": 300}})
+        translate._flush_usage(self.conn, "body")
+        row = self.conn.execute(
+            "SELECT kind, calls, prompt_tokens, completion_tokens "
+            "FROM translate_usage").fetchone()
+        self.assertEqual((row["kind"], row["calls"], row["prompt_tokens"],
+                          row["completion_tokens"]), ("body", 2, 300, 800))
+        # flush 后清零，零调用再 flush 不落行
+        translate._flush_usage(self.conn, "body")
+        self.assertEqual(self.conn.execute(
+            "SELECT COUNT(*) c FROM translate_usage").fetchone()["c"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

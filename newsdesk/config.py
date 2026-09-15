@@ -123,7 +123,9 @@ TRANSLATE_SOURCE_LANGS = frozenset(
 TRANSLATE_DISPLAY_ZH = os.getenv("NEWSDESK_TRANSLATE_DISPLAY", "0") == "1"
 # 单轮译中文的新条数上限（标题、正文各一档），防突发打爆配额，超出留到下一轮。
 TRANSLATE_ZH_MAX_PER_RUN = int(os.getenv("NEWSDESK_TRANSLATE_ZH_MAX", "150"))
-TRANSLATE_ZH_BODY_MAX_PER_RUN = int(os.getenv("NEWSDESK_TRANSLATE_ZH_BODY_MAX", "40"))
+# 正文档默认 150：外文正文入流约 65 条/小时，40/轮跟不上导致新详情长期显示原文；
+# 150/轮 > 入流，既跟得上又能逐轮把存量正文补齐（flash 模型，成本极低）。
+TRANSLATE_ZH_BODY_MAX_PER_RUN = int(os.getenv("NEWSDESK_TRANSLATE_ZH_BODY_MAX", "150"))
 
 SERVER_HOST = os.getenv("NEWSDESK_HOST", "0.0.0.0")
 SERVER_PORT = int(os.getenv("NEWSDESK_PORT", "8899"))

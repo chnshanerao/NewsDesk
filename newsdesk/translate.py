@@ -18,12 +18,48 @@
 """
 import hashlib
 import json
+import threading
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 from . import config
 from .normalize import clean_title, gram_set, simhash, tokens
+
+# —— 真实 token 消耗计量 ——
+# _translate_one 每次成功调用把 API 回传的 usage 累加进 _usage（线程安全）；
+# 每个翻译入口（enrich / _fill_zh）结束时 _flush_usage 把累计值落一行 translate_usage，
+# 之后清零。mock 掉 _translate_one 的测试不会触碰 _usage，故计量对测试透明。
+_usage_lock = threading.Lock()
+_usage = {"prompt": 0, "completion": 0, "calls": 0}
+
+
+def _add_usage(resp: dict) -> None:
+    u = resp.get("usage") or {}
+    pt = int(u.get("prompt_tokens") or 0)
+    ct = int(u.get("completion_tokens") or 0)
+    with _usage_lock:
+        _usage["prompt"] += pt
+        _usage["completion"] += ct
+        _usage["calls"] += 1
+
+
+def _flush_usage(conn, kind: str) -> None:
+    """把自上次 flush 以来累计的 token 用量落一行，然后清零。零调用则跳过。"""
+    with _usage_lock:
+        pt, ct, n = _usage["prompt"], _usage["completion"], _usage["calls"]
+        _usage["prompt"] = _usage["completion"] = _usage["calls"] = 0
+    if n == 0:
+        return
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS translate_usage("
+        "ts INTEGER, model TEXT, kind TEXT, calls INTEGER, "
+        "prompt_tokens INTEGER, completion_tokens INTEGER)")
+    conn.execute(
+        "INSERT INTO translate_usage(ts, model, kind, calls, "
+        "prompt_tokens, completion_tokens) VALUES (?,?,?,?,?,?)",
+        (_now_ts(), config.TRANSLATE_MODEL, kind, n, pt, ct))
+    conn.commit()
 
 SYSTEM = ("You are a precise news-headline translator. Translate the given "
           "headline into natural English. Output only the translation — no "
@@ -88,6 +124,7 @@ def _translate_one(text: str, target: str = "en", timeout: int | None = None,
          "Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout or config.TRANSLATE_TIMEOUT) as r:
         resp = json.loads(r.read().decode("utf-8"))
+    _add_usage(resp)
     out = (resp["choices"][0]["message"]["content"] or "").strip()
     # 标题走 clean_title（去引号/尾标点）；正文是多段文本，只做首尾清洗，保留段落。
     return clean_title(out) if target == "en" else out.strip()
@@ -166,6 +203,7 @@ def enrich(conn, items: list[dict], log=print) -> dict:
               it["simhash"], it["id"]) for it in done])
         conn.commit()
 
+    _flush_usage(conn, "canonical_en")   # 记账：入库英文 canonical 翻译的真实 token
     if stat["translated"] or stat["failed"] or stat["skipped"]:
         log(f"  [译] 外文 {stat['eligible']} 条：缓存 {stat['cached']} / "
             f"新译 {stat['translated']} / 失败 {stat['failed']} / 缓延 {stat['skipped']}")
@@ -236,6 +274,7 @@ def _fill_zh(conn, table: str, src_col: str, dst_col: str, *, budget: int,
         conn.executemany(f"UPDATE {table} SET {dst_col}=? WHERE id=?", done)
     _cache_put(conn, put_rows)
     conn.commit()
+    _flush_usage(conn, stat_key)   # 记账：本次 headline / body 翻译的真实 token
 
 
 def enrich_display_zh(conn, log=print) -> dict:
