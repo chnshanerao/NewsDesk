@@ -139,7 +139,17 @@ TTS_API_KEY = os.getenv("NEWSDESK_TTS_KEY", "") or os.getenv("DASHSCOPE_API_KEY"
 TTS_BASE_URL = os.getenv(
     "NEWSDESK_TTS_BASE",
     "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation")
+# 上游协议。两家接口形状不同，所以做成可切换，换供应商时只动 env 不动代码：
+#   dashscope   —— DashScope 原生多模态生成，回一个 24 小时有效的音频 URL
+#   openai_chat —— OpenAI 兼容的 chat/completions + modalities:["audio"]，
+#                  音频以 base64 回在 message.audio.data 里（Token Plan 走这条）
+# 实测记录：本机那把 TOKEN_PLAN_KEY 绑在 ap-southeast-1，目录里列着
+# qwen-audio-3.0-tts-plus，但该模型每种请求形状都回 InternalError（同 key 打
+# qwen3.8-flash 正常）—— 即「列了但没真开」。等它可用或换一把 DashScope key，
+# 只需改 env 三行：NEWSDESK_TTS=1 / NEWSDESK_TTS_PROTOCOL / NEWSDESK_TTS_BASE。
+TTS_PROTOCOL = os.getenv("NEWSDESK_TTS_PROTOCOL", "dashscope")
 TTS_MODEL = os.getenv("NEWSDESK_TTS_MODEL", "qwen3-tts-flash")
+TTS_FORMAT = os.getenv("NEWSDESK_TTS_FORMAT", "mp3")
 TTS_VOICE = os.getenv("NEWSDESK_TTS_VOICE", "Cherry")
 TTS_TIMEOUT = int(os.getenv("NEWSDESK_TTS_TIMEOUT", "20"))
 # 每天最多合成多少条（用户设定：100 条/天）。

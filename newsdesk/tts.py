@@ -61,6 +61,8 @@ def usage(conn) -> dict:
         "enabled": available(),
         "model": config.TTS_MODEL,
         "voice": config.TTS_VOICE,
+        "protocol": config.TTS_PROTOCOL,      # 后台排错要知道走的是哪条通路
+        "format": config.TTS_FORMAT,
         "day": _today(),
         "daily_items": config.TTS_DAILY_ITEMS,
         "daily_chars": config.TTS_DAILY_CHARS,
@@ -84,8 +86,10 @@ def _prune(conn) -> None:
 
 
 def digest_of(text: str) -> str:
+    # 编码格式也进摘要：换了 mp3→wav 之后旧缓存的 mime 就不对了，必须算成另一条。
     return hashlib.sha256(
-        f"{config.TTS_MODEL}|{config.TTS_VOICE}|{text}".encode("utf-8")).hexdigest()
+        f"{config.TTS_MODEL}|{config.TTS_VOICE}|{config.TTS_FORMAT}|{text}"
+        .encode("utf-8")).hexdigest()
 
 
 def audio(conn, digest: str):
@@ -100,27 +104,62 @@ def audio(conn, digest: str):
     return {"mime": row[0], "bytes": bytes(row[1])}
 
 
+_MIME = {"mp3": "audio/mpeg", "wav": "audio/wav", "opus": "audio/ogg",
+         "pcm": "audio/wav", "aac": "audio/aac", "flac": "audio/flac"}
+
+
 def _fetch(url: str) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": config.USER_AGENT})
     with urllib.request.urlopen(req, timeout=config.TTS_TIMEOUT) as resp:
         return resp.read(8 * 1024 * 1024)
 
 
-def _call_api(text: str) -> str:
-    """调用 DashScope 多模态生成接口，返回音频 URL。失败一律抛异常由上层降级。"""
-    payload = json.dumps({
-        "model": config.TTS_MODEL,
-        "input": {"text": text, "voice": config.TTS_VOICE},
-    }).encode("utf-8")
-    req = urllib.request.Request(config.TTS_BASE_URL, data=payload, method="POST")
+def _post(url: str, payload: dict) -> dict:
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"),
+                                method="POST")
     req.add_header("Content-Type", "application/json")
     req.add_header("Authorization", f"Bearer {config.TTS_API_KEY}")
     with urllib.request.urlopen(req, timeout=config.TTS_TIMEOUT) as resp:
-        body = json.loads(resp.read().decode("utf-8"))
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _dashscope(text: str) -> bytes:
+    """DashScope 原生多模态生成：回一个音频 URL，再把字节抓回来。"""
+    body = _post(config.TTS_BASE_URL,
+                 {"model": config.TTS_MODEL,
+                  "input": {"text": text, "voice": config.TTS_VOICE}})
     url = (((body.get("output") or {}).get("audio") or {}).get("url") or "").strip()
     if not url:
         raise ValueError("上游未返回音频 URL")
-    return url
+    return _fetch(url)
+
+
+def _openai_chat(text: str) -> bytes:
+    """OpenAI 兼容 chat/completions + modalities:["audio"]（Token Plan 走这条）。
+
+    音频通常以 base64 回在 message.audio.data；有的实现只给 url，两种都收。
+    """
+    body = _post(config.TTS_BASE_URL.rstrip("/") + "/chat/completions", {
+        "model": config.TTS_MODEL,
+        "messages": [{"role": "user", "content": text}],
+        "modalities": ["audio"],
+        "audio": {"voice": config.TTS_VOICE, "format": config.TTS_FORMAT},
+    })
+    msg = ((body.get("choices") or [{}])[0].get("message") or {})
+    clip = msg.get("audio") or {}
+    if clip.get("data"):
+        import base64
+        return base64.b64decode(clip["data"])
+    if clip.get("url"):
+        return _fetch(clip["url"])
+    raise ValueError("上游未返回音频数据")
+
+
+def _synthesize_bytes(text: str) -> bytes:
+    """按配置的协议取音频字节。失败一律抛异常，由 synthesize() 统一降级。"""
+    if config.TTS_PROTOCOL == "openai_chat":
+        return _openai_chat(text)
+    return _dashscope(text)
 
 
 def synthesize(conn, text: str) -> dict:
@@ -151,9 +190,9 @@ def synthesize(conn, text: str) -> dict:
         return {"ok": False, "reason": "daily_chars", "usage": quota}
 
     try:
-        blob = _fetch(_call_api(text))
+        blob = _synthesize_bytes(text)
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
-            ValueError, json.JSONDecodeError, OSError) as exc:
+            ValueError, TypeError, KeyError, json.JSONDecodeError, OSError) as exc:
         return {"ok": False, "reason": "upstream",
                 "detail": type(exc).__name__, "usage": quota}
     if not blob:
@@ -163,8 +202,9 @@ def synthesize(conn, text: str) -> dict:
     now = int(time.time())
     conn.execute("INSERT INTO tts_usage(ts,day,model,chars) VALUES(?,?,?,?)",
                  (now, _today(), config.TTS_MODEL, len(text)))
+    mime = _MIME.get(config.TTS_FORMAT, "audio/mpeg")
     conn.execute("INSERT OR REPLACE INTO tts_cache(hash,ts,chars,mime,audio) "
-                 "VALUES(?,?,?,?,?)", (digest, now, len(text), "audio/mpeg", blob))
+                 "VALUES(?,?,?,?,?)", (digest, now, len(text), mime, blob))
     conn.commit()
     return {"ok": True, "audio": f"/api/tts/audio?h={digest}", "cached": False,
             "chars": len(text), "usage": usage(conn)}

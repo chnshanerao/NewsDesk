@@ -3,6 +3,8 @@
 这层的价值全在「不会花超」和「花超了也不坏」这两件事上，所以测试重点不是能不能合成，
 而是：撞上限时返回 ok=False（不抛异常、不返错误页）、缓存命中不计费、缺 key 直接降级。
 """
+import base64
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -125,6 +127,65 @@ class TTSQuotaTests(unittest.TestCase):
         self.assertEqual(u["cap_cny_per_day"], 4.8)     # 6 万字符 × ¥0.8/万
         self.assertEqual(u["spent_cny_today"], 0)
         self.assertEqual(u["day"], tts._today())
+
+    def test_openai_chat_protocol_reads_base64_audio(self):
+        """Token Plan 那条通路：音频以 base64 回在 message.audio.data 里。
+
+        做成可切换协议是为了「换供应商只改 env 不改代码」—— 所以这条路径必须有测试，
+        不能等到真拿到 key 那天才发现解析写错了。
+        """
+
+        reply = json.dumps({"choices": [{"message": {
+            "audio": {"data": base64.b64encode(AUDIO).decode(), "format": "mp3"}}}]})
+        seen = {}
+
+        def fake(req, timeout=None):
+            seen["url"] = req.full_url
+            seen["body"] = json.loads(req.data)
+            return _Blob(reply.encode())
+
+        with mock.patch.multiple(config, TTS_PROTOCOL="openai_chat",
+                                 TTS_BASE_URL="https://plan.example/compatible-mode/v1"), \
+                mock.patch("urllib.request.urlopen", fake):
+            r = tts.synthesize(self.conn, "央行宣布降息")
+            digest = tts.digest_of("央行宣布降息")
+            clip = tts.audio(self.conn, digest)
+        self.assertTrue(r["ok"])
+        self.assertEqual(seen["url"],
+                         "https://plan.example/compatible-mode/v1/chat/completions")
+        self.assertEqual(seen["body"]["modalities"], ["audio"])
+        self.assertEqual(clip["bytes"], AUDIO)
+        self.assertEqual(clip["mime"], "audio/mpeg")
+
+    def test_openai_chat_protocol_falls_back_to_url_form(self):
+        reply = json.dumps({"choices": [{"message": {
+            "audio": {"url": "https://cdn.example/x.mp3"}}}]})
+
+        def fake(req, timeout=None):
+            url = req if isinstance(req, str) else req.full_url
+            return _Blob(AUDIO if url.endswith(".mp3") else reply.encode())
+
+        with mock.patch.object(config, "TTS_PROTOCOL", "openai_chat"), \
+                mock.patch("urllib.request.urlopen", fake):
+            self.assertTrue(tts.synthesize(self.conn, "换一条新闻")["ok"])
+
+    def test_unparsable_upstream_reply_degrades(self):
+        """上游 200 但形状不对（模型列了没真开就是这样）也必须是 ok=false，不能抛。"""
+        with mock.patch.object(config, "TTS_PROTOCOL", "openai_chat"), \
+                mock.patch("urllib.request.urlopen",
+                           lambda *a, **k: _Blob(b'{"choices":[{"message":{}}]}')):
+            r = tts.synthesize(self.conn, "上游形状不对的一条")
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["reason"], "upstream")
+        self.assertEqual(tts.usage(self.conn)["used_items"], 0)
+
+    def test_format_is_part_of_the_cache_key(self):
+        """mp3 换成 wav 后不能命中旧缓存，否则 mime 和字节对不上。"""
+        with mock.patch.object(config, "TTS_FORMAT", "mp3"):
+            a = tts.digest_of("同一段话")
+        with mock.patch.object(config, "TTS_FORMAT", "wav"):
+            b = tts.digest_of("同一段话")
+        self.assertNotEqual(a, b)
 
     def test_audio_lookup_rejects_malformed_hashes(self):
         """/api/tts/audio 的 h 参数直接来自 query string，先挡住非法形状。"""

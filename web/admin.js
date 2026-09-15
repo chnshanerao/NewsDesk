@@ -195,7 +195,7 @@ panels.voice=async ()=>{
   const usedC=t.daily_chars?Math.min(100,100*t.used_chars/t.daily_chars):0;
   return `<h2>朗读用量与预算</h2>
   <div class="ad-cards">
-    ${card("云端朗读",t.enabled?"已启用":"未启用",t.enabled?`${esc(t.model)} · ${esc(t.voice)}`:"回退浏览器自带语音",t.enabled?"ok":"warn")}
+    ${card("云端朗读",t.enabled?"已启用":"未启用",t.enabled?`${esc(t.model)} · ${esc(t.voice)} · ${esc(t.protocol)}/${esc(t.format)}`:"回退浏览器自带语音",t.enabled?"ok":"warn")}
     ${card("今日条数",`${num(t.used_items)}/${num(t.daily_items)}`,`剩 ${num(t.remaining_items)} 条`)}
     ${card("今日字符",`${num(t.used_chars)}/${num(t.daily_chars)}`,`剩 ${num(t.remaining_chars)} 字符`)}
     ${card("今日花费",`¥${t.spent_cny_today}`,`当天上限 ¥${t.cap_cny_per_day}`)}
@@ -210,7 +210,10 @@ panels.voice=async ()=>{
     最坏情况一天 <b>¥${t.cap_cny_per_day}</b>，一个月不超过 <b>¥${(t.cap_cny_per_day*30).toFixed(1)}</b>。</div>
   <div class="note">同一段文字重复朗读命中本地音频缓存：<b>不计费、不占名额</b>。撞上限、缺 key 或上游报错时接口返回 ok=false，
     前端静默回退到浏览器自带语音 —— 读者只会觉得声音换了，不会遇到「朗读坏了」。</div>
-  ${t.enabled?"":`<div class="ad-todo">要启用云端音色：在服务器 <code>/opt/newsdesk/newsdesk.env</code> 里加 <code>NEWSDESK_TTS=1</code> 和一把支持 TTS 模型的 <code>NEWSDESK_TTS_KEY</code>，然后 <code>systemctl restart newsdesk</code>。密钥不进代码库、不进聊天记录。</div>`}`;
+  ${t.enabled?"":`<div class="ad-todo">要启用云端音色：在服务器 <code>/opt/newsdesk/newsdesk.env</code> 里加 <code>NEWSDESK_TTS=1</code> 和一把支持 TTS 模型的 <code>NEWSDESK_TTS_KEY</code>，然后 <code>systemctl restart newsdesk</code>。密钥不进代码库、不进聊天记录。
+    <br>现有那把 <code>TOKEN_PLAN_KEY</code> 不行：它绑在 ap-southeast-1，目录里虽列着 <code>qwen-audio-3.0-tts-plus</code>，
+    但实测每种请求形状都回 InternalError（同 key 打 qwen3.8-flash 正常），属于「列了没真开」。
+    等它可用就把协议切成 <code>NEWSDESK_TTS_PROTOCOL=openai_chat</code> —— 代码两条通路都已就绪，不用改代码。</div>`}`;
 };
 
 panels.translate=async ()=>{
