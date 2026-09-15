@@ -863,9 +863,11 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
                                        "unread": sum(1 for x in rows if x["read_ts"] is None)})
 
                 if p == "/api/digest":
-                    md = digest.briefing(conn, profile,
-                                         hours=int(q.get("hours", 24)),
-                                         top=int(q.get("top", 12)))
+                    hrs, top = int(q.get("hours", 24)), int(q.get("top", 12))
+                    if q.get("format") == "json":
+                        return self._json(
+                            digest.briefing_data(conn, profile, hours=hrs, top=top))
+                    md = digest.briefing(conn, profile, hours=hrs, top=top)
                     return self._send(200, md.encode("utf-8"),
                                       "text/markdown; charset=utf-8")
 
