@@ -133,6 +133,20 @@ def enrich(conn, items: list[dict], log=print) -> dict:
                     stat["failed"] += 1
         _cache_put(conn, put_rows)
 
+    # 回填已在库的外文条目：sources 每轮会重新列出最近若干条，其中已入库的
+    # 会被 insert 的 OR IGNORE 跳过，canonical 落不进去。这里按 id 主动补写
+    # canonical_title 及据它重算的 grams/simhash（聚类信号也要对齐英文）。
+    # 只填 canonical 仍为空的行 —— 幂等，不覆盖已有；未入库的新条目命中 0 行，
+    # 稍后由 insert_items 写入。这样存量外文稿也能随 sources 复现逐步进印证。
+    done = [it for it in todo if it.get("canonical_title")]
+    if done:
+        conn.executemany(
+            "UPDATE items SET canonical_title=?, grams=?, simhash=? "
+            "WHERE id=? AND (canonical_title IS NULL OR canonical_title='')",
+            [(it["canonical_title"], " ".join(sorted(it["grams"])),
+              it["simhash"], it["id"]) for it in done])
+        conn.commit()
+
     if stat["translated"] or stat["failed"] or stat["skipped"]:
         log(f"  [译] 外文 {stat['eligible']} 条：缓存 {stat['cached']} / "
             f"新译 {stat['translated']} / 失败 {stat['failed']} / 缓延 {stat['skipped']}")

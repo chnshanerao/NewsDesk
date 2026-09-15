@@ -101,6 +101,39 @@ class TranslateEnrichTests(unittest.TestCase):
         self.assertEqual(stat["translated"], 1)
         self.assertEqual(stat["skipped"], 2)            # 超额留到下一轮
 
+    def test_backfills_existing_db_row(self):
+        """存量外文条目（已入库、canonical 为空）应被回填 canonical/grams/simhash。"""
+        it = _item("fr1", "La BCE abaisse ses taux directeurs", "fr")
+        store.insert_items(self.conn, [it])          # 先入库，无 canonical
+        row = self.conn.execute(
+            "SELECT canonical_title FROM items WHERE id='fr1'").fetchone()
+        self.assertIsNone(row[0])                     # 确认入库时为空
+        eng = "ECB lowers its key interest rates"
+        # 下一轮 source 复现同一条 → enrich 命中缓存/翻译后回填已在库的行
+        again = _item("fr1", "La BCE abaisse ses taux directeurs", "fr")
+        with mock.patch.object(config, "TRANSLATE_ENABLED", True), \
+                mock.patch.object(config, "TRANSLATE_API_KEY", "k"), \
+                mock.patch.object(translate, "_translate_one", return_value=eng):
+            translate.enrich(self.conn, [again])
+        row = self.conn.execute(
+            "SELECT canonical_title, grams FROM items WHERE id='fr1'").fetchone()
+        self.assertEqual(row[0], eng)                 # canonical 已回填
+        self.assertEqual(set(row[1].split()), gram_set(eng))  # grams 换成英文
+
+    def test_backfill_does_not_clobber_existing_canonical(self):
+        """已有 canonical 的行不被回填覆盖（幂等，WHERE 只命中 NULL）。"""
+        it = _item("fr1", "Titre français", "fr")
+        it["canonical_title"] = "First canonical"
+        store.insert_items(self.conn, [it])
+        again = _item("fr1", "Titre français", "fr")
+        with mock.patch.object(config, "TRANSLATE_ENABLED", True), \
+                mock.patch.object(config, "TRANSLATE_API_KEY", "k"), \
+                mock.patch.object(translate, "_translate_one", return_value="Second"):
+            translate.enrich(self.conn, [again])
+        row = self.conn.execute(
+            "SELECT canonical_title FROM items WHERE id='fr1'").fetchone()
+        self.assertEqual(row[0], "First canonical")   # 未被覆盖
+
     def test_translated_foreign_clusters_with_english(self):
         """核心目的：外文译成英文后，能和英文报道聚成同一个事件簇。"""
         shared = "ECB cuts interest rates by 25 basis points"
