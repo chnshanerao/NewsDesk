@@ -269,8 +269,11 @@ function ttsPause(){
 }
 function ttsResume(){
   if(_cloudAudio){_cloudAudio.play().catch(()=>{});return;}
-  if(_srPauseFallback){_srPauseFallback=false;if(play.on)playAt(play.i);return;}
-  if(ttsSupported())window.speechSynthesis.resume();
+  // 暂停期间 speaking 仍为 true；它为假说明手上没有待续的句子
+  // （被上面的兜底掐断了，或恰好停在两条之间的空档）→ 重念当前这条。
+  const inFlight=ttsSupported()&&(window.speechSynthesis.speaking||window.speechSynthesis.pending);
+  if(_srPauseFallback||!inFlight){_srPauseFallback=false;if(play.on)playAt(play.i);return;}
+  window.speechSynthesis.resume();
 }
 // 入口：先试云端，云端不接手（未配置/超限/失败）再用浏览器语音。
 // done 在这一条念完时回调（连读靠它接下一条），已被停掉的那次不回调。
@@ -358,8 +361,11 @@ async function playAt(k){
   const idx=playIndexOf(id);
   if(idx<0){playAt(k+1);return;}
   // 念出编号：听的人看不见高亮时，靠这句知道念到哪了。
-  speak(`第${k+1}条。${hl(state.items[idx])}。${body}`,null,
-        ()=>{if(play.on&&play.ids[play.i]===id)setTimeout(()=>playAt(k+1),450);});
+  speak(`第${k+1}条。${hl(state.items[idx])}。${body}`,null,()=>{
+    if(!play.on||play.ids[play.i]!==id)return;
+    // 条与条之间留半秒喘气；正好在这半秒里按了暂停就别往下走了（「继续」会重念这条）。
+    setTimeout(()=>{if(play.on&&!play.paused&&play.ids[play.i]===id)playAt(k+1);},450);
+  });
   if(play.ids[k+1])playBody(play.ids[k+1]);    // 预取下一条摘要
 }
 function playStart(from){
