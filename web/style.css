@@ -717,14 +717,20 @@ body.senior .btn.on{ background:var(--amber); color:#fff; border-color:var(--amb
 .sr-bar{ display:none; }
 body.senior .sr-bar{
   position:sticky; top:58px; z-index:19;
-  display:flex; align-items:center; gap:10px;
+  display:flex; align-items:center; flex-wrap:wrap; gap:10px;
   padding:10px 16px; background:var(--panel-2); border-bottom:1px solid var(--line);
 }
 .sr-bar-label{ font-size:.9em; color:var(--fg-dim); }
 .sr-bar .spacer{ flex:1; }
+/* 字号三件套必须整组一起换行：「字号」标签和 A−/大/A＋ 分到两行就读不懂了 */
+.sr-font-group{ display:inline-flex; align-items:center; gap:10px; flex:0 0 auto; }
 .sr-chip{
   min-width:56px; min-height:46px; padding:0 16px; font-size:1em; font-weight:700;
   color:var(--fg); background:#fff; border:2px solid var(--line-2); border-radius:10px;
+  /* 中文没有词边界，min-content 就是一个字宽。窄屏上 flex 收缩会把「回到标准版」
+     压成一列竖排的字，整条工具条被顶到一百多像素高。nowrap 把 min-content 钉成
+     整行文字宽度，收不动就只能换行 —— 换行是想要的，竖排不是。 */
+  white-space:nowrap;
 }
 .sr-chip:hover{ border-color:var(--amber); background:#fff; }
 .sr-font-val{ min-width:3.2em; text-align:center; font-size:1em; color:var(--amber); }
@@ -880,6 +886,7 @@ body.senior .sr-player{
   font-size:1em; font-weight:700; color:var(--fg);
   background:#fff; border:2px solid var(--line-2); border-radius:10px; cursor:pointer;
   -webkit-tap-highlight-color:transparent;
+  white-space:nowrap;      /* 同上：不许把「上一条」压成竖排 */
 }
 .sr-pbtn:hover{ border-color:var(--blue); }
 .sr-pbtn-main{ min-width:120px; color:#fff; background:var(--blue); border-color:var(--blue); }
@@ -908,9 +915,38 @@ body.no-tts .sr-chip-play, body.no-tts .sr-player{ display:none !important; }
   body.senior .ev .hl{ font-size:1.3em; }
   body.senior .detail{ padding:0 16px 60px; }
   body.senior .search{ min-width:140px; }
-  /* 播报条在手机上竖排：四个键排成 2×2，每个都还是能一指点中的大小 */
-  body.senior .sr-player{ flex-direction:column; align-items:stretch; gap:10px; padding:10px 12px 14px; }
-  .sr-player-btns{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-  .sr-pbtn, .sr-pbtn-main{ min-width:0; padding:0 8px; }
-  body.senior.sr-playing .main{ padding-bottom:230px; }
+
+  /* —— 顶部两条不再吸顶 ——
+     手机上顶栏本身就要换行（品牌+三个分类+搜索+中文/原文），实际高度远超那个
+     写死的 58px，sr-bar 再 sticky 到 top:58px 就会压在顶栏身上；两条都钉住的话，
+     还没开始读新闻，上半屏就没了。手机上让它们随页面滚走：真正需要常驻的只有
+     暂停/停止，那些在底部播报条里。 */
+  body.senior .topbar{ position:static; }
+  body.senior .sr-bar{ position:static; gap:8px; padding:8px 12px; }
+  .sr-bar .spacer{ display:none; }              /* 换行布局里 flex:1 的占位符只会白占一行 */
+  body.senior .sr-bar .sr-chip-play{ flex:1 1 100%; }   /* 连读独占第一行：老人版的主力动作 */
+  body.senior .sr-bar .sr-chip{ min-width:48px; padding:0 12px; }
+  body.senior .sr-font-val{ min-width:2em; }
+  body.senior .sr-bar .sr-chip-alt{ margin-left:auto; }  /* 第二行：字号一组靠左，回标准版靠右 */
+
+  /* —— 底部播报条 ——
+     原来这里只写了 flex-direction:column，留下两个坑：
+       1) 基类的 flex-wrap:wrap 还在。列方向 + 允许换行 = 溢出时往「右边」新起一列，
+          按钮组整块被甩出屏幕右下角；
+       2) .sr-player-now 的 flex:1 1 240px，在列方向上 240px 是**高度**，
+          光一行标题就撑出 240px，整条占掉半屏。
+     所以这里把两处都显式改掉，并把按钮压到 48px（仍高于 44px 触控下限）。
+     底部再垫一份 safe-area：iPhone 的 Home 横条和 Safari 工具栏会盖住 bottom:0。 */
+  body.senior .sr-player{
+    flex-direction:column; flex-wrap:nowrap; align-items:stretch;
+    gap:8px; padding:10px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  .sr-player-now{ flex:0 0 auto; }
+  .sr-player-pos{ font-size:.85em; }
+  .sr-player-title{ font-size:.95em; }
+  /* minmax(0,1fr) 而不是 1fr：1fr 的自动最小值是内容宽度，长标签会把轨道顶宽、
+     整个网格挤出屏幕。配合 .sr-pbtn 的 min-width:0 才真的锁在两列里。 */
+  .sr-player-btns{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  .sr-pbtn, .sr-pbtn-main{ min-width:0; min-height:48px; padding:0 6px; font-size:.95em; }
+  body.senior.sr-playing .main{ padding-bottom:200px; }
 }

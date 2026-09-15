@@ -167,6 +167,49 @@ class FrontendExperienceTests(unittest.TestCase):
         self.assertIn(".ev.sr-now", css)          # 正在念的那条要看得出来
         self.assertIn("scrollIntoView", script)   # 并自动滚到眼前
 
+    def test_senior_mobile_layout_survives_a_narrow_screen(self):
+        """手机上（Safari，375px 宽）实测三处塌掉，这里逐条钉住修法。
+
+        ① 中文没有词边界，flex 收缩时 min-content 就是「一个字宽」，于是
+           「回到标准版」「停止连读」被压成一列竖排的字，工具条被顶到一百多像素高。
+           → 按钮 white-space:nowrap（收不动就换行），工具条 flex-wrap:wrap 接住。
+        ② 底部播报条在手机上改成了列方向，但基类的 flex-wrap:wrap 没关：
+           列方向 + 允许换行 = 溢出往右边新起一列，暂停/停止被甩出屏幕右下角。
+        ③ 同一条上 .sr-player-now 的 flex:1 1 240px，在列方向上 240px 是**高度**，
+           一行标题撑出 240px，整条播报条占掉半屏。
+        """
+        css = (ROOT / "web" / "style.css").read_text()
+        html = (ROOT / "web" / "index.html").read_text()
+        flat = css.replace("\n", " ")
+        mobile = flat[flat.rfind("@media (max-width:700px)"):]
+
+        # ① 竖排字：两类按钮都必须 nowrap，工具条必须允许换行
+        self.assertRegex(flat, r"\.sr-chip\{[^}]*white-space:nowrap")
+        self.assertRegex(flat, r"\.sr-pbtn\{[^}]*white-space:nowrap")
+        self.assertRegex(flat, r"body\.senior \.sr-bar\{[^}]*flex-wrap:wrap")
+        # 「字号」标签和 A−/大/A＋ 要整组换行，不能拆到两行
+        self.assertIn('class="sr-font-group"', html)
+        self.assertIn(".sr-font-group{", flat)
+
+        # ② 列方向必须显式关掉换行，否则按钮组整块溢出到屏幕右边
+        player = mobile[mobile.find("body.senior .sr-player{"):]
+        player = player[:player.find("}")]
+        self.assertIn("flex-direction:column", player)
+        self.assertIn("flex-wrap:nowrap", player)
+        # ③ 列方向上 flex-basis 是高度，必须改掉那个 240px
+        self.assertRegex(mobile, r"\.sr-player-now\{[^}]*flex:0 0 auto")
+        # 两列网格用 minmax(0,1fr)：1fr 的自动最小值是内容宽度，长标签会顶宽轨道
+        self.assertIn("grid-template-columns:repeat(2,minmax(0,1fr))", mobile)
+        # iPhone 的 Home 横条 / Safari 底部工具栏会盖住 bottom:0
+        self.assertIn("env(safe-area-inset-bottom", mobile)
+
+        # 顶栏 + 工具条在手机上不吸顶：顶栏实际高度远超写死的 58px，
+        # 两条都钉住会互相压住，且没读到新闻上半屏就没了
+        self.assertRegex(mobile, r"body\.senior \.topbar\{[^}]*position:static")
+        self.assertRegex(mobile, r"body\.senior \.sr-bar\{[^}]*position:static")
+        # 触控目标仍不低于 44px（压缩高度不能压到点不中）
+        self.assertRegex(mobile, r"\.sr-pbtn[^{]*\{[^}]*min-height:48px")
+
     def test_two_axes_are_explained_and_never_merged(self):
         """存疑度和可信度必须在页面上被讲成两个轴，否则用户会当成同一套分级。"""
         html = (ROOT / "web" / "index.html").read_text()
