@@ -871,6 +871,14 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
                     return self._send(200, md.encode("utf-8"),
                                       "text/markdown; charset=utf-8")
 
+                if p == "/api/admin/verify":
+                    # 管理模式解锁：仅校验现有写令牌是否有效，不返回任何数据。
+                    # 用于前端把管理专用控件（信源/质量/监控/刷新等）从默认视图里隐藏起来，
+                    # 输入正确令牌后再显示。数据本身是公开的，这里只做界面减负，不是数据边界。
+                    if self._write_authenticated():
+                        return self._json({"ok": True})
+                    return self._json({"error": "unauthorized"}, 401)
+
                 if p == "/api/refresh_status":
                     # 匿名访问只回运行状态；log 明细（含内部信源清单/错误路径）需令牌
                     if self._write_authenticated():

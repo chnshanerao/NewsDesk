@@ -167,6 +167,13 @@ button { font-family: var(--mono); font-size: 12px; cursor: pointer; }
 .btn.busy::after { content: " ⟳"; animation: spin 1.1s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* 管理模式：默认隐藏管理工具，body.admin 时显示。lock 按钮始终可见但低调。 */
+.admin-only { display: none !important; }
+body.admin .admin-only { display: inline-flex !important; }
+.lock-btn { opacity: .5; padding: 4px 8px; }
+.lock-btn:hover { opacity: 1; }
+.lock-btn.on { opacity: 1; color: var(--amber); border-color: var(--amber-dim); }
+
 .clock { color: var(--amber); font-variant-numeric: tabular-nums; font-size: 12px; }
 .clock small { color: var(--fg-dim2); margin-left: 6px; }
 

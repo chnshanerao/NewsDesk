@@ -30,6 +30,26 @@ class FrontendExperienceTests(unittest.TestCase):
         self.assertIn("lead.body_zh:lead?.body", script.replace(" ", ""))
         self.assertIn("展示${fromBody?\"原文正文\":\"入库摘要\"}的前", script)
 
+    def test_admin_controls_are_gated_reader_essentials_are_not(self):
+        """默认视图只留读者必需入口；管理工具用 .admin-only 隐藏，令牌校验后才显示。"""
+        html = (ROOT / "web" / "index.html").read_text()
+        script = (ROOT / "web" / "app.js").read_text()
+        # 读者必需的入口不能被隐藏
+        for keep in ('id="btn-ai-radar"', 'id="btn-digest"', 'id="btn-lang"'):
+            i = html.find(keep)
+            self.assertNotEqual(i, -1, keep)
+            line = html[html.rfind("<", 0, i):html.find(">", i) + 1]
+            self.assertNotIn("admin-only", line, f"{keep} 不应被隐藏")
+        # 管理工具必须带 admin-only
+        for gated in ('id="btn-sources"', 'id="btn-quality"', 'id="btn-alerts"',
+                      'id="btn-refresh"', 'id="btn-command"'):
+            i = html.find(gated)
+            line = html[html.rfind("<", 0, i):html.find(">", i) + 1]
+            self.assertIn("admin-only", line, f"{gated} 应被 admin-only 隐藏")
+        self.assertIn('id="btn-lock"', html)          # 解锁入口始终可见
+        self.assertIn("/api/admin/verify", script)    # 令牌走服务端校验
+        self.assertIn("function applyAdmin", script)
+
     def test_two_axes_are_explained_and_never_merged(self):
         """存疑度和可信度必须在页面上被讲成两个轴，否则用户会当成同一套分级。"""
         html = (ROOT / "web" / "index.html").read_text()

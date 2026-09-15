@@ -135,6 +135,26 @@ function renderRows() {
 function syncDispBtn(){const b=$("#btn-lang");if(!b)return;b.textContent=state.disp==="zh"?"🌐 原文":"🌐 中文";b.classList.toggle("on",state.disp==="orig");b.title=state.disp==="zh"?"当前：默认全中文 · 点击查看原文":"当前：显示原文 · 点击切回中文";}
 function toggleDisp(){state.disp=state.disp==="zh"?"orig":"zh";localStorage.setItem("nd_disp",state.disp);syncDispBtn();renderRows();if(state.selected>=0)select(state.selected);}
 
+// 管理模式：默认视图只保留读者需要的入口（新闻/AI雷达/简报/中英切换/上手）；
+// 信源、质量、监控、刷新等管理工具用 .admin-only 隐藏，输入现有写令牌校验通过后才显示。
+// 数据本身公开，这里只是界面减负 —— 不是数据安全边界，别把它当访问控制。
+function isAdmin(){return localStorage.getItem("nd_admin")==="1";}
+function syncLockBtn(){const b=$("#btn-lock");if(!b)return;const on=isAdmin();b.textContent=on?"🔓":"🔒";b.classList.toggle("on",on);b.title=on?"管理模式已开启 · 点击退出":"管理模式（需令牌）";}
+function applyAdmin(){document.body.classList.toggle("admin",isAdmin());syncLockBtn();}
+async function toggleAdmin(){
+  if(isAdmin()){localStorage.removeItem("nd_admin");sessionStorage.removeItem("newsdeskWriteToken");applyAdmin();toast("已退出管理模式");return;}
+  const entered=prompt("请输入 NEWSDESK 管理令牌（服务器 data/admin-token）");
+  if(!entered)return;
+  const token=entered.trim();
+  try{
+    const r=await fetch("/api/admin/verify",{headers:{"X-Newsdesk-Token":token}});
+    if(!r.ok){toast("令牌无效，未进入管理模式");return;}
+    sessionStorage.setItem("newsdeskWriteToken",token);
+    localStorage.setItem("nd_admin","1");
+    applyAdmin();toast("已进入管理模式");
+  }catch(e){toast(`校验失败：${e.message}`);}
+}
+
 function setMode(mode) {
   state.mode=mode;
   document.querySelectorAll("[data-mode]").forEach(b=>b.classList.toggle("on",b.dataset.mode===mode));
@@ -294,7 +314,7 @@ async function refresh(){const b=$("#btn-refresh");b.classList.add("busy");try{a
 document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{state.view=b.dataset.view;document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x===b));loadFeed()});
 $("#mc").oninput=e=>{$("#mc-val").textContent=e.target.value;state.minCred=+e.target.value;loadFeed()};
 let qt;$("#q").oninput=()=>{clearTimeout(qt);qt=setTimeout(loadFeed,250)};
-$("#btn-about").onclick=()=>showWelcome(false);$("#btn-changelog").onclick=()=>showChangelog();$("#btn-sources").onclick=showSources;$("#btn-ai-radar").onclick=showAIRadar;$("#btn-research").onclick=showResearch;$("#btn-quality").onclick=showQuality;$("#btn-digest").onclick=showDigest;$("#btn-alerts").onclick=showAlerts;$("#btn-watchlist").onclick=showWatchlist;$("#btn-help").onclick=help;$("#btn-refresh").onclick=refresh;$("#btn-command").onclick=openCommands;$("#btn-lang").onclick=toggleDisp;
+$("#btn-about").onclick=()=>showWelcome(false);$("#btn-changelog").onclick=()=>showChangelog();$("#btn-sources").onclick=showSources;$("#btn-ai-radar").onclick=showAIRadar;$("#btn-research").onclick=showResearch;$("#btn-quality").onclick=showQuality;$("#btn-digest").onclick=showDigest;$("#btn-alerts").onclick=showAlerts;$("#btn-watchlist").onclick=showWatchlist;$("#btn-help").onclick=help;$("#btn-refresh").onclick=refresh;$("#btn-command").onclick=openCommands;$("#btn-lang").onclick=toggleDisp;$("#btn-lock").onclick=toggleAdmin;
 document.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
 $("#command-palette").onclick=e=>{if(e.target===$("#command-palette"))closeCommands()};
 $("#command-q").oninput=()=>{commandIndex=0;renderCommands()};
@@ -304,4 +324,4 @@ document.onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.p
 setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString("zh-CN",{hour12:false}),1000);
 async function loadChangelog(){try{const entries=await api("/api/changelog");if(!entries.length)return;const latest=entries[0];const seen=localStorage.getItem("newsdeskChangelogSeen");if(seen!==latest.version){const banner=document.createElement("div");banner.className="changelog-banner";banner.innerHTML=`<span>🆕 <b>v${esc(latest.version)}</b> ${esc(latest.title)}</span><button class="btn changelog-view">查看更新</button><button class="btn changelog-dismiss">✕</button>`;document.body.prepend(banner);banner.querySelector(".changelog-view").onclick=()=>{banner.remove();showChangelog(entries);localStorage.setItem("newsdeskChangelogSeen",latest.version)};banner.querySelector(".changelog-dismiss").onclick=()=>{banner.remove();localStorage.setItem("newsdeskChangelogSeen",latest.version)}}window._changelogData=entries}catch(_){}}
 function showChangelog(entries){entries=entries||window._changelogData||[];if(!entries.length)return toast("暂无更新日志");modal("版本更新记录",`<div class="changelog">${entries.map(e=>`<div class="changelog-entry"><div class="changelog-head"><b>v${esc(e.version)}</b><span>${esc(e.date)}</span><em>${esc(e.title)}</em></div><ul>${e.changes.map(c=>`<li>${esc(c)}</li>`).join("")}</ul></div>`).join("")}</div>`)}
-initFilters(); syncDispBtn(); setMode("personal"); loadStats().catch(e=>toast(`加载失败：${e.message}`)); loadMarkets(); loadAlertBadge(); loadChangelog();if(!localStorage.getItem("newsdeskWelcomeSeen"))setTimeout(()=>showWelcome(true),350);setInterval(loadMarkets,120000); setInterval(loadAlertBadge,60000);
+initFilters(); syncDispBtn(); applyAdmin(); setMode("personal"); loadStats().catch(e=>toast(`加载失败：${e.message}`)); loadMarkets();if(isAdmin()){loadAlertBadge(); loadChangelog(); setInterval(loadAlertBadge,60000);}if(!localStorage.getItem("newsdeskWelcomeSeen"))setTimeout(()=>showWelcome(true),350);setInterval(loadMarkets,120000);

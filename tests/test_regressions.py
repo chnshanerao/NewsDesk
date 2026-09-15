@@ -360,6 +360,24 @@ class ApiLanguageFilterTests(unittest.TestCase):
                 urllib.request.urlopen(req, timeout=3)
             self.assertEqual(caught.exception.code, 401)
 
+    def test_admin_verify_requires_token(self):
+        port = self.httpd.server_address[1]
+        with mock.patch.object(config, "WRITE_TOKEN", "test-secret"):
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/api/admin/verify", timeout=3)
+            self.assertEqual(caught.exception.code, 401)
+
+    def test_admin_verify_accepts_valid_token(self):
+        port = self.httpd.server_address[1]
+        with mock.patch.object(config, "WRITE_TOKEN", "test-secret"):
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/admin/verify",
+                headers={"X-Newsdesk-Token": "test-secret"})
+            with urllib.request.urlopen(req, timeout=3) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        self.assertTrue(payload["ok"])
+
     def test_rejected_body_closes_connection(self):
         port = self.httpd.server_address[1]
         req = urllib.request.Request(
