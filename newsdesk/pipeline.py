@@ -418,6 +418,9 @@ def run(conn, reg: dict, profile: dict, *, use_llm=False, only=None,
         sc = rescore(conn, reg, profile, window_h=window_h, log=log)
         log("▸ 正文预览")
         body = hydrate_bodies(conn, reg, log=log)
+        # 展示翻译：簇标题与领头稿正文译成中文（默认关，需 NEWSDESK_TRANSLATE_DISPLAY=1）。
+        # 放在聚类与正文之后：两者都就绪，一次把标题+正文的中文补齐。
+        translate.enrich_display_zh(conn, log=log)
         log("▸ 公开职业行动候选")
         movement_sources = {
             s["id"]: {**s, "owner": s.get("owner") or s.get("group") or s["id"],

@@ -2,7 +2,11 @@
 
 const $ = (s) => document.querySelector(s);
 const state = {view: "signal", mode: "personal", focus: "all", topic: "all", lang: "all", hours: 48, order: "rank", minCred: 0,
-               items: [], selected: -1, profile: null};
+               items: [], selected: -1, profile: null,
+               // 展示语言：zh=默认全中文（有译文就用译文），orig=原文。仅影响显示，不改数据。
+               disp: localStorage.getItem("nd_disp") || "zh"};
+// 取展示标题：中文模式且有中文译文则用译文，否则回退原文（含尚未译好的外文）。
+function hl(c){ return state.disp==="zh" && c && c.headline_zh ? c.headline_zh : (c?c.headline:""); }
 const labels = {CONFIRMED: "✅ 多集团报道", LIKELY: "🟢 证据较完整",
                 SINGLE: "🟡 单源待证", LOW: "🔴 证据较弱"};
 // 存疑度是独立于可信度的第二个轴：可信度看『证据有多完整』，存疑度只数『主动的可疑信号』。
@@ -118,11 +122,18 @@ async function loadFeed() {
   renderParsedQuery(d.parsed_query||{});
   const searched=$("#q").value.trim()?" · 检索结果":"";
   $("#count").textContent=`${d.total} 个事件 · ${state.view==="signal"?"值得看":state.view==="unverified"?"待证":"噪音"}${searched}`;
-  $("#rows").innerHTML=d.items.length?d.items.map((c,i)=>`<article class="ev" data-i="${i}" tabindex="0">
+  renderRows();
+}
+// 列表渲染独立成函数：切换中文/原文时无需重新拉取，直接用 state.items 重绘。
+function renderRows() {
+  $("#rows").innerHTML=state.items.length?state.items.map((c,i)=>`<article class="ev${i===state.selected?" sel":""}" data-i="${i}" tabindex="0">
     <div class="ts">${time(c.last_ts)}</div><div class="cr" style="color:${color(c.cred_code)}">${Math.round(c.cred)}</div>
-    <div class="body"><div class="hl">${esc(c.headline)}</div><div class="meta"><span class="badge b-${c.cred_code}">${labels[c.cred_code]}</span><span class="tier t${c.best_tier}">T${c.best_tier}</span><span class="src">${esc(c.headline_src)}</span><span class="gcount">${c.n_groups}源/${c.n_items}篇</span>${(c.languages||[]).map(x=>`<span class="tier">${esc(x.toUpperCase())}</span>`).join("")}${c.topics.map(t=>`<span class="topic">#${esc(topicLabels[t]||t)}</span>`).join("")}${c.doubt_code&&c.doubt_code!=="CLEAR"?`<span class="doubt d-${c.doubt_code}" title="存疑度 ${c.doubt}/100：${esc((c.doubt_detail?.reasons||[]).map(r=>r.reason).join("；"))}">${doubtLabels[c.doubt_code]} ${Math.round(c.doubt)}</span>`:""}${c.llm?.red_flags?.length?`<span class="flag">⚑${c.llm.red_flags.length}</span>`:""}</div><div class="meter"><i style="width:${c.cred}%;background:${color(c.cred_code)}"></i></div></div></article>`).join(""):`<div class="note" style="padding:30px;text-align:center">当前筛选条件下没有事件</div>`;
+    <div class="body"><div class="hl">${esc(hl(c))}</div><div class="meta"><span class="badge b-${c.cred_code}">${labels[c.cred_code]}</span><span class="tier t${c.best_tier}">T${c.best_tier}</span><span class="src">${esc(c.headline_src)}</span><span class="gcount">${c.n_groups}源/${c.n_items}篇</span>${(c.languages||[]).map(x=>`<span class="tier">${esc(x.toUpperCase())}</span>`).join("")}${c.topics.map(t=>`<span class="topic">#${esc(topicLabels[t]||t)}</span>`).join("")}${c.doubt_code&&c.doubt_code!=="CLEAR"?`<span class="doubt d-${c.doubt_code}" title="存疑度 ${c.doubt}/100：${esc((c.doubt_detail?.reasons||[]).map(r=>r.reason).join("；"))}">${doubtLabels[c.doubt_code]} ${Math.round(c.doubt)}</span>`:""}${c.llm?.red_flags?.length?`<span class="flag">⚑${c.llm.red_flags.length}</span>`:""}</div><div class="meter"><i style="width:${c.cred}%;background:${color(c.cred_code)}"></i></div></div></article>`).join(""):`<div class="note" style="padding:30px;text-align:center">当前筛选条件下没有事件</div>`;
   document.querySelectorAll(".ev").forEach(n=>n.onclick=()=>select(+n.dataset.i));
 }
+// 中文 / 原文 切换：只改展示，不重新拉数据。重绘列表并重开当前详情（详情会重新取 *_zh）。
+function syncDispBtn(){const b=$("#btn-lang");if(!b)return;b.textContent=state.disp==="zh"?"🌐 原文":"🌐 中文";b.classList.toggle("on",state.disp==="orig");b.title=state.disp==="zh"?"当前：默认全中文 · 点击查看原文":"当前：显示原文 · 点击切回中文";}
+function toggleDisp(){state.disp=state.disp==="zh"?"orig":"zh";localStorage.setItem("nd_disp",state.disp);syncDispBtn();renderRows();if(state.selected>=0)select(state.selected);}
 
 function setMode(mode) {
   state.mode=mode;
@@ -193,15 +204,17 @@ async function select(i) {
   const lead=(c.items||[]).find(x=>x.source_name===c.headline_src)||(c.items||[])[0];
   // 正文预览（items.body，抓取时抽的原文前几段）比 feed 摘要好得多，
   // 但不是每篇都抽得到——抽不到就退回摘要，并在脚注里说清读的是哪一种。
-  const fromBody=!!(lead?.body||"").trim();
-  const previewText=((lead?.body||lead?.summary)||"").trim();
+  // 中文模式优先展示正文中文译文（body_zh），没有译文再回退原文正文，再回退摘要。
+  const bodyText=state.disp==="zh"&&(lead?.body_zh||"").trim()?lead.body_zh:lead?.body;
+  const fromBody=!!(bodyText||"").trim();
+  const previewText=((bodyText||lead?.summary)||"").trim();
   const previewParts=previewText.split(/(?:\r?\n){2,}|(?<=[。！？!?])\s+/).map(x=>x.trim()).filter(Boolean).slice(0,4);
   let preview=previewParts.join("\n\n").slice(0,900).trim();
   if(preview.length===900) preview=preview.replace(/[，,；;：:\s][^，,；;：:\s]{0,80}$/u,"").trim()+"…";
   const previewNote=`展示${fromBody?"原文正文":"入库摘要"}的前 ${Math.min(4,previewParts.length)} 段，最多 900 字；请以原始新闻为准。`;
   const renderSource=x=>{const k=sourceKind(x);return `<div class="item source-${k.key}"><span class="source-role">${esc(k.label)}</span><span class="it-t">${time(x.published_ts)}</span><div><a class="source-title-link" href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(x.title)} <span aria-hidden="true">↗</span></a><div class="it-s">${esc(x.source_name)} · ${esc(x.grp)} · T${x.tier}</div><div class="source-hint">${esc(k.hint)}</div></div></div>`};
   $("#detail").className="detail"; $("#detail").innerHTML=`<button class="detail-back" id="detail-back">&times; 关闭详情 <kbd>Esc</kbd></button><div class="row"><span class="badge b-${c.cred_code}">${labels[c.cred_code]}</span><span>${time(c.last_ts)}</span></div>
-    <h2>${esc(c.headline)}</h2>${lead?.url?`<a class="original-cta" href="${esc(lead.url)}" target="_blank" rel="noopener noreferrer"><span>阅读原始新闻</span><b>${esc(lead.source_name||c.headline_src)} ↗</b></a>`:""}<div class="bigscore"><b style="color:${color(c.cred_code)}">${c.cred}</b><span>证据完整度 / 100 · 相关性 ${c.relevance.toFixed(2)}</span><b class="doubt-score" style="color:${doubtColor[c.doubt_code||"CLEAR"]}">${Math.round(c.doubt||0)}</b><span>存疑度 / 100 · ${esc(c.doubt_detail?.label||"无明显存疑")}</span></div><div class="score-disclaimer">左边是证据完整度：来源、交叉报道、内容与时效信号的综合分，不是事件为真的概率。右边是存疑度，只统计主动出现的可疑信号——两个数字回答不同的问题，都不高才是好消息。</div>
+    <h2>${esc(hl(c))}</h2>${lead?.url?`<a class="original-cta" href="${esc(lead.url)}" target="_blank" rel="noopener noreferrer"><span>阅读原始新闻</span><b>${esc(lead.source_name||c.headline_src)} ↗</b></a>`:""}<div class="bigscore"><b style="color:${color(c.cred_code)}">${c.cred}</b><span>证据完整度 / 100 · 相关性 ${c.relevance.toFixed(2)}</span><b class="doubt-score" style="color:${doubtColor[c.doubt_code||"CLEAR"]}">${Math.round(c.doubt||0)}</b><span>存疑度 / 100 · ${esc(c.doubt_detail?.label||"无明显存疑")}</span></div><div class="score-disclaimer">左边是证据完整度：来源、交叉报道、内容与时效信号的综合分，不是事件为真的概率。右边是存疑度，只统计主动出现的可疑信号——两个数字回答不同的问题，都不高才是好消息。</div>
     <h5>存疑判定</h5><div class="doubt-panel d-${c.doubt_code||"CLEAR"}">${(c.doubt_detail?.reasons||[]).length?(c.doubt_detail.reasons).map(r=>`<div class="doubt-row"><b>+${r.points}</b><span>${esc(r.reason)}</span></div>`).join(""):`<div class="note">已查：${esc((c.doubt_detail?.checked||[]).join("、"))} —— 均未命中可疑信号。这不代表内容为真，只代表没有发现主动的可疑迹象。</div>`}</div>
     ${c.entities?.length?`<div class="asset-links">相关实体 / 资产：${c.entities.map(x=>`<button class="chip asset-link" data-asset="${esc(x.symbol||x.entity_id)}" data-kind="${esc(x.kind)}" title="${esc(x.name)} · 命中：${esc(x.matched_terms.join('/'))}">${esc(x.symbol||x.name)}</button>`).join("")}</div>`:""}
     <h5>可追溯断言</h5><div class="claim-list">${ev.claims.length?ev.claims.map(x=>`<div class="claim"><div><span class="claim-status ${x.status}">${claimLabels[x.status]||esc(x.status)}</span> ${esc(x.text)}</div><div class="claim-refs">${x.evidence.map((r,j)=>`<a href="${esc(r.url)}" target="_blank" rel="noopener" title="${esc(r.group)}"><span class="claim-relation ${esc(r.relation||"support")}">${relationLabels[r.relation||"support"]}</span>[${j+1}] ${esc(r.source)} ↗</a>`).join("")}</div></div>`).join(""):`<div class="note">尚未提取出可追溯断言</div>`}</div>
@@ -254,7 +267,7 @@ function dgEvent(c){const meta=[`${c.n_groups} 个独立信源 / ${c.n_items} �
   const pts=(c.points||[]).map(p=>`<div class="dg-pt dg-${p.kind}"><b>${esc(DG_KIND[p.kind]||p.label)}</b><span>${esc(p.text)}</span></div>`).join("");
   return `<article class="dg-card"><div class="dg-rail" style="background:${color(c.cred_code)}"></div><div class="dg-main">
     <div class="dg-head">${c.rank?`<span class="dg-rank">${c.rank}</span>`:""}<span class="badge b-${c.cred_code}">${labels[c.cred_code]}</span><span class="dg-score">${c.cred}分 · ${esc(c.cred_label)}</span></div>
-    <div class="dg-title">${esc(c.headline)}</div>
+    <div class="dg-title">${esc(hl(c))}</div>
     <div class="dg-meta">${meta}</div>${pts?`<div class="dg-pts">${pts}</div>`:""}
     ${c.url?`<a class="dg-orig" href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">阅读原始新闻 ↗</a>`:""}</div></article>`;}
 async function showDigest(){
@@ -262,7 +275,7 @@ async function showDigest(){
   const sec=(title,sub,inner)=>`<section class="dg-sec"><h4>${title}${sub?`<em>${esc(sub)}</em>`:""}</h4>${inner}</section>`;
   const signal=d.signal.length?d.signal.map(dgEvent).join(""):`<div class="note">本窗口内没有同时满足可信度与相关性门槛的事件。</div>`;
   const unv=d.unverified.length?d.unverified.map(dgEvent).join(""):`<div class="note">无。</div>`;
-  const noise=d.noise.length?`<div class="dg-noise">${d.noise.map(n=>`<div>🚫 <s>${esc(n.headline)}</s> <em>${esc(n.why)}</em></div>`).join("")}</div>`:`<div class="note">无。</div>`;
+  const noise=d.noise.length?`<div class="dg-noise">${d.noise.map(n=>`<div>🚫 <s>${esc(hl(n))}</s> <em>${esc(n.why)}</em></div>`).join("")}</div>`:`<div class="note">无。</div>`;
   const health=`<table class="dg-health"><thead><tr><th>信源</th><th>层级</th><th>状态</th><th>条数</th><th>延迟</th></tr></thead><tbody>${d.health.map(h=>`<tr class="${h.ok?"":"bad"}"><td>${esc(h.name)}</td><td>T${h.tier}</td><td>${h.ok?"✅":"❌ "+esc(h.err||"")}</td><td>${h.items}</td><td>${h.ms}ms</td></tr>`).join("")}</tbody></table>`;
   const body=`<div class="dg-bar">窗口近 ${d.window_hours}h · 事件 ${d.counts.events} 个 · 入选 ${d.counts.signal} · 噪音过滤 ${d.counts.noise} · 画像「${esc(d.profile||"")}」</div>`
     +sec("① 值得你看的","可信度 × 相关性 排序",signal)
@@ -281,7 +294,7 @@ async function refresh(){const b=$("#btn-refresh");b.classList.add("busy");try{a
 document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{state.view=b.dataset.view;document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x===b));loadFeed()});
 $("#mc").oninput=e=>{$("#mc-val").textContent=e.target.value;state.minCred=+e.target.value;loadFeed()};
 let qt;$("#q").oninput=()=>{clearTimeout(qt);qt=setTimeout(loadFeed,250)};
-$("#btn-about").onclick=()=>showWelcome(false);$("#btn-changelog").onclick=()=>showChangelog();$("#btn-sources").onclick=showSources;$("#btn-ai-radar").onclick=showAIRadar;$("#btn-research").onclick=showResearch;$("#btn-quality").onclick=showQuality;$("#btn-digest").onclick=showDigest;$("#btn-alerts").onclick=showAlerts;$("#btn-watchlist").onclick=showWatchlist;$("#btn-help").onclick=help;$("#btn-refresh").onclick=refresh;$("#btn-command").onclick=openCommands;
+$("#btn-about").onclick=()=>showWelcome(false);$("#btn-changelog").onclick=()=>showChangelog();$("#btn-sources").onclick=showSources;$("#btn-ai-radar").onclick=showAIRadar;$("#btn-research").onclick=showResearch;$("#btn-quality").onclick=showQuality;$("#btn-digest").onclick=showDigest;$("#btn-alerts").onclick=showAlerts;$("#btn-watchlist").onclick=showWatchlist;$("#btn-help").onclick=help;$("#btn-refresh").onclick=refresh;$("#btn-command").onclick=openCommands;$("#btn-lang").onclick=toggleDisp;
 document.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
 $("#command-palette").onclick=e=>{if(e.target===$("#command-palette"))closeCommands()};
 $("#command-q").oninput=()=>{commandIndex=0;renderCommands()};
@@ -291,4 +304,4 @@ document.onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.p
 setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString("zh-CN",{hour12:false}),1000);
 async function loadChangelog(){try{const entries=await api("/api/changelog");if(!entries.length)return;const latest=entries[0];const seen=localStorage.getItem("newsdeskChangelogSeen");if(seen!==latest.version){const banner=document.createElement("div");banner.className="changelog-banner";banner.innerHTML=`<span>🆕 <b>v${esc(latest.version)}</b> ${esc(latest.title)}</span><button class="btn changelog-view">查看更新</button><button class="btn changelog-dismiss">✕</button>`;document.body.prepend(banner);banner.querySelector(".changelog-view").onclick=()=>{banner.remove();showChangelog(entries);localStorage.setItem("newsdeskChangelogSeen",latest.version)};banner.querySelector(".changelog-dismiss").onclick=()=>{banner.remove();localStorage.setItem("newsdeskChangelogSeen",latest.version)}}window._changelogData=entries}catch(_){}}
 function showChangelog(entries){entries=entries||window._changelogData||[];if(!entries.length)return toast("暂无更新日志");modal("版本更新记录",`<div class="changelog">${entries.map(e=>`<div class="changelog-entry"><div class="changelog-head"><b>v${esc(e.version)}</b><span>${esc(e.date)}</span><em>${esc(e.title)}</em></div><ul>${e.changes.map(c=>`<li>${esc(c)}</li>`).join("")}</ul></div>`).join("")}</div>`)}
-initFilters(); setMode("personal"); loadStats().catch(e=>toast(`加载失败：${e.message}`)); loadMarkets(); loadAlertBadge(); loadChangelog();if(!localStorage.getItem("newsdeskWelcomeSeen"))setTimeout(()=>showWelcome(true),350);setInterval(loadMarkets,120000); setInterval(loadAlertBadge,60000);
+initFilters(); syncDispBtn(); setMode("personal"); loadStats().catch(e=>toast(`加载失败：${e.message}`)); loadMarkets(); loadAlertBadge(); loadChangelog();if(!localStorage.getItem("newsdeskWelcomeSeen"))setTimeout(()=>showWelcome(true),350);setInterval(loadMarkets,120000); setInterval(loadAlertBadge,60000);

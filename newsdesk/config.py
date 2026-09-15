@@ -116,6 +116,15 @@ TRANSLATE_SOURCE_LANGS = frozenset(
     x for x in os.getenv("NEWSDESK_TRANSLATE_LANGS", "fr,de,pt,es,it,ru,ja,ko").split(",")
     if x.strip())
 
+# 展示翻译（独立于上面的 canonical 层）：把外文（含英文）的簇标题与领头稿正文译成
+# 中文，写入 clusters.headline_zh / items.body_zh，供默认「全中文」展示；原文列不动，
+# 前端可切回「原文」。默认关：显式设 NEWSDESK_TRANSLATE_DISPLAY=1 且配了 key 才生效。
+# 复用同一把 TOKEN_PLAN_KEY 与模型；无 key / 报错一律回退原文，绝不阻断。
+TRANSLATE_DISPLAY_ZH = os.getenv("NEWSDESK_TRANSLATE_DISPLAY", "0") == "1"
+# 单轮译中文的新条数上限（标题、正文各一档），防突发打爆配额，超出留到下一轮。
+TRANSLATE_ZH_MAX_PER_RUN = int(os.getenv("NEWSDESK_TRANSLATE_ZH_MAX", "150"))
+TRANSLATE_ZH_BODY_MAX_PER_RUN = int(os.getenv("NEWSDESK_TRANSLATE_ZH_BODY_MAX", "40"))
+
 SERVER_HOST = os.getenv("NEWSDESK_HOST", "0.0.0.0")
 SERVER_PORT = int(os.getenv("NEWSDESK_PORT", "8899"))
 REFRESH_TOKEN = os.getenv("NEWSDESK_REFRESH_TOKEN", "")

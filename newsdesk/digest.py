@@ -58,7 +58,8 @@ def briefing_data(conn, profile: dict, *, hours=24, top=12) -> dict:
         return {
             "rank": rank, "cred_code": c["cred_code"],
             "badge": BADGE.get(c["cred_code"], "•"),
-            "headline": c["headline"], "cred": round(c["cred"]),
+            "headline": c["headline"], "headline_zh": c.get("headline_zh"),
+            "cred": round(c["cred"]),
             "cred_label": c["cred_label"], "n_groups": c["n_groups"],
             "n_items": c["n_items"], "best_tier": c["best_tier"],
             "src": c["headline_src"], "ts": fmt_ts(c["last_ts"]),
@@ -74,7 +75,9 @@ def briefing_data(conn, profile: dict, *, hours=24, top=12) -> dict:
             why.append("与你无关" + (f"（{'/'.join(nz[:2])}）" if nz else ""))
         if c["cred"] < min_cred:
             why.append(f"可信度仅 {c['cred']:.0f}")
-        noise_out.append({"headline": c["headline"][:46], "why": "，".join(why)})
+        noise_out.append({"headline": c["headline"][:46],
+                          "headline_zh": (c.get("headline_zh") or "")[:46] or None,
+                          "why": "，".join(why)})
 
     health = []
     for h in store.health(conn):

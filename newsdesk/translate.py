@@ -30,9 +30,26 @@ SYSTEM = ("You are a precise news-headline translator. Translate the given "
           "quotes, no explanation, no source-language text, no trailing period "
           "unless the original has one.")
 
+SYSTEM_ZH = ("你是专业的新闻翻译。把给定的新闻文本准确、自然地翻译成简体中文。"
+             "只输出译文本身——不要加引号、不要解释、不要保留原文。"
+             "人名、机构、公司、产品沿用通用中文译名；确无通用译名的专有名词可保留原文。"
+             "保持新闻语体，不要增删信息。")
 
-def _hash(src_lang: str, text: str) -> str:
-    return hashlib.sha1(f"{src_lang}\n{text}".encode("utf-8")).hexdigest()
+
+def _hash(src_lang: str, text: str, target: str = "en") -> str:
+    # target 折进 key：en(canonical) 保持旧 key 不变（存量缓存不失效），
+    # zh(展示) 加前缀走独立命名空间，同一条外文的英文/中文译文各存各的。
+    prefix = "" if target == "en" else f"{target}\n"
+    return hashlib.sha1(f"{prefix}{src_lang}\n{text}".encode("utf-8")).hexdigest()
+
+
+def _is_cjk(text: str) -> bool:
+    """判断是否已是中文文本：CJK 汉字占字母类字符的比例够高即视为中文，无需再译。"""
+    if not text:
+        return False
+    cjk = sum(1 for ch in text if "一" <= ch <= "鿿")
+    letters = sum(1 for ch in text if ch.isalpha() or "一" <= ch <= "鿿")
+    return letters > 0 and cjk / letters >= 0.30
 
 
 def _cache_get(conn, keys: list[str]) -> dict[str, str]:
@@ -54,14 +71,15 @@ def _cache_put(conn, rows: list[tuple]) -> None:
     conn.commit()
 
 
-def _translate_one(text: str, timeout: int | None = None) -> str:
-    """调一次翻译 API。失败抛异常，由调用方回退原文。"""
+def _translate_one(text: str, target: str = "en", timeout: int | None = None,
+                   max_tokens: int = 200) -> str:
+    """调一次翻译 API。失败抛异常，由调用方回退原文。target 决定目标语言与清洗方式。"""
     payload = {
         "model": config.TRANSLATE_MODEL,
-        "messages": [{"role": "system", "content": SYSTEM},
+        "messages": [{"role": "system", "content": SYSTEM if target == "en" else SYSTEM_ZH},
                      {"role": "user", "content": text}],
         "temperature": 0.0,
-        "max_tokens": 200,
+        "max_tokens": max_tokens,
     }
     req = urllib.request.Request(
         config.TRANSLATE_BASE_URL.rstrip("/") + "/chat/completions",
@@ -71,7 +89,8 @@ def _translate_one(text: str, timeout: int | None = None) -> str:
     with urllib.request.urlopen(req, timeout=timeout or config.TRANSLATE_TIMEOUT) as r:
         resp = json.loads(r.read().decode("utf-8"))
     out = (resp["choices"][0]["message"]["content"] or "").strip()
-    return clean_title(out)
+    # 标题走 clean_title（去引号/尾标点）；正文是多段文本，只做首尾清洗，保留段落。
+    return clean_title(out) if target == "en" else out.strip()
 
 
 def _apply_canonical(item: dict, canonical: str) -> None:
@@ -150,6 +169,90 @@ def enrich(conn, items: list[dict], log=print) -> dict:
     if stat["translated"] or stat["failed"] or stat["skipped"]:
         log(f"  [译] 外文 {stat['eligible']} 条：缓存 {stat['cached']} / "
             f"新译 {stat['translated']} / 失败 {stat['failed']} / 缓延 {stat['skipped']}")
+    return stat
+
+
+def _fill_zh(conn, table: str, src_col: str, dst_col: str, *, budget: int,
+             max_tokens: int, stat: dict, stat_key: str, log=print) -> None:
+    """把 table.src_col 的外文文本译成中文写进 dst_col（dst_col IS NULL 的行）。
+
+    - 已是中文的行：直接把原文拷进 dst_col（不调 API），让 NULL 查询逐轮收敛、不再重扫。
+    - 外文行：先查缓存，未命中且预算内才真译；超预算留到下一轮（dst_col 仍为 NULL）。
+    """
+    rows = conn.execute(
+        f"SELECT id, {src_col} AS txt FROM {table} "
+        f"WHERE {dst_col} IS NULL AND {src_col} IS NOT NULL AND {src_col} != '' "
+        f"LIMIT ?", (budget * 5,)).fetchall()
+    if not rows:
+        return
+
+    cjk_updates, foreign = [], []
+    for r in rows:
+        txt = (r["txt"] or "").strip()
+        if not txt:
+            continue
+        (cjk_updates if _is_cjk(txt) else foreign).append((r["id"], txt))
+    # 已是中文：原样落 dst_col，标记「已处理」，避免每轮重复扫描。
+    if cjk_updates:
+        conn.executemany(f"UPDATE {table} SET {dst_col}=? WHERE id=?",
+                         [(txt, iid) for iid, txt in cjk_updates])
+
+    keys = {iid: _hash("", txt, "zh") for iid, txt in foreign}
+    cached = _cache_get(conn, list(set(keys.values())))
+    done, fresh = [], []
+    for iid, txt in foreign:
+        hit = cached.get(keys[iid])
+        if hit is not None:
+            done.append((hit, iid))
+            stat["cached"] += 1
+        elif budget > 0:
+            fresh.append((iid, txt))
+            budget -= 1
+        # 超预算：留 NULL，下一轮再补
+
+    put_rows, ts = [], _now_ts()
+    if fresh:
+        def one(job):
+            iid, txt = job
+            try:
+                return iid, txt, _translate_one(txt, "zh", max_tokens=max_tokens), None
+            except Exception as e:                       # noqa: BLE001 —— 软着陆
+                return iid, txt, None, f"{type(e).__name__}: {e}"[:160]
+
+        with ThreadPoolExecutor(max_workers=config.TRANSLATE_CONCURRENCY) as ex:
+            for iid, txt, zh, err in ex.map(one, fresh):
+                if zh:
+                    done.append((zh, iid))
+                    put_rows.append((keys[iid], "", txt, zh, config.TRANSLATE_MODEL, ts))
+                    stat[stat_key] += 1
+                else:
+                    stat["failed"] += 1
+
+    if done:
+        conn.executemany(f"UPDATE {table} SET {dst_col}=? WHERE id=?", done)
+    _cache_put(conn, put_rows)
+    conn.commit()
+
+
+def enrich_display_zh(conn, log=print) -> dict:
+    """展示翻译：把外文（含英文）簇标题与领头稿正文译成中文，写入 *_zh 列。
+
+    未开启 / 无 key → no-op。原文列（headline/body）一字不动，前端可切回「原文」。
+    clusters 每轮重建，换了领头稿 upsert 会把 headline_zh 置空，这里据 NULL 重译，
+    故全量事件的中文标题会随刷新逐步补齐；正文只译已抽取到的领头稿。
+    """
+    stat = {"headline": 0, "body": 0, "cached": 0, "failed": 0}
+    if not (config.TRANSLATE_DISPLAY_ZH and config.TRANSLATE_API_KEY):
+        return stat
+    _fill_zh(conn, "clusters", "headline", "headline_zh",
+             budget=config.TRANSLATE_ZH_MAX_PER_RUN, max_tokens=300,
+             stat=stat, stat_key="headline", log=log)
+    _fill_zh(conn, "items", "body", "body_zh",
+             budget=config.TRANSLATE_ZH_BODY_MAX_PER_RUN, max_tokens=1024,
+             stat=stat, stat_key="body", log=log)
+    if stat["headline"] or stat["body"] or stat["failed"]:
+        log(f"  [译中] 标题 {stat['headline']} / 正文 {stat['body']} / "
+            f"缓存命中 {stat['cached']} / 失败 {stat['failed']}")
     return stat
 
 

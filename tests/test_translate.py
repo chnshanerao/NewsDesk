@@ -155,5 +155,91 @@ class TranslateEnrichTests(unittest.TestCase):
         self.assertEqual(len(groups), 1)
 
 
+class DisplayZhTests(unittest.TestCase):
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.conn = store.connect(Path(self._td.name) / "t.db")
+        store.init(self.conn)
+
+    def tearDown(self):
+        self.conn.close()
+        self._td.cleanup()
+
+    def _cluster(self, cid, headline):
+        store.upsert_cluster(self.conn, {
+            "id": cid, "headline": headline, "headline_src": "SRC", "url": "",
+            "first_ts": 1, "last_ts": 1, "n_items": 1, "n_groups": 1,
+            "best_tier": 1, "topics": [], "cred": 50, "cred_code": "SINGLE",
+            "cred_label": "单源", "relevance": 0.5, "rank": 1.0, "breakdown": {},
+            "content_hash": "h_" + cid})
+        self.conn.commit()
+
+    def test_is_cjk(self):
+        self.assertTrue(translate._is_cjk("欧洲央行降息"))
+        self.assertTrue(translate._is_cjk("OpenAI 发布 GPT-6 模型"))   # 主体中文
+        self.assertFalse(translate._is_cjk("ECB cuts key rates"))
+        self.assertFalse(translate._is_cjk("La BCE abaisse ses taux"))
+
+    def test_disabled_is_noop(self):
+        self._cluster("c1", "ECB cuts rates")
+        with mock.patch.object(config, "TRANSLATE_DISPLAY_ZH", False), \
+                mock.patch.object(translate, "_translate_one") as m:
+            stat = translate.enrich_display_zh(self.conn)
+        m.assert_not_called()
+        self.assertEqual(stat["headline"], 0)
+        row = store.get_cluster(self.conn, "c1")
+        self.assertIsNone(row["headline_zh"])
+
+    def test_chinese_headline_copied_not_translated(self):
+        self._cluster("c1", "欧洲央行宣布降息")
+        with mock.patch.object(config, "TRANSLATE_DISPLAY_ZH", True), \
+                mock.patch.object(config, "TRANSLATE_API_KEY", "k"), \
+                mock.patch.object(translate, "_translate_one") as m:
+            translate.enrich_display_zh(self.conn)
+        m.assert_not_called()   # 已是中文，不调 API
+        row = store.get_cluster(self.conn, "c1")
+        self.assertEqual(row["headline_zh"], "欧洲央行宣布降息")
+
+    def test_foreign_headline_translated_and_cached(self):
+        self._cluster("c1", "La BCE abaisse ses taux")
+        with mock.patch.object(config, "TRANSLATE_DISPLAY_ZH", True), \
+                mock.patch.object(config, "TRANSLATE_API_KEY", "k"), \
+                mock.patch.object(translate, "_translate_one",
+                                  return_value="欧洲央行下调利率") as m:
+            stat = translate.enrich_display_zh(self.conn)
+        self.assertEqual(stat["headline"], 1)
+        self.assertEqual(m.call_args.args[1], "zh")   # target=zh
+        row = store.get_cluster(self.conn, "c1")
+        self.assertEqual(row["headline_zh"], "欧洲央行下调利率")
+        # 原文列不动
+        self.assertEqual(row["headline"], "La BCE abaisse ses taux")
+        # 第二轮命中缓存，不再调 API
+        with mock.patch.object(config, "TRANSLATE_DISPLAY_ZH", True), \
+                mock.patch.object(config, "TRANSLATE_API_KEY", "k"), \
+                mock.patch.object(translate, "_translate_one") as m2:
+            self.conn.execute("UPDATE clusters SET headline_zh=NULL WHERE id='c1'")
+            self.conn.commit()
+            stat2 = translate.enrich_display_zh(self.conn)
+        m2.assert_not_called()
+        self.assertEqual(stat2["cached"], 1)
+
+    def test_headline_change_nulls_zh_for_retranslate(self):
+        self._cluster("c1", "La BCE abaisse ses taux")
+        self.conn.execute("UPDATE clusters SET headline_zh='旧译文' WHERE id='c1'")
+        self.conn.commit()
+        # 换领头稿 → headline 变了，upsert 应把 headline_zh 置空
+        self._cluster("c1", "The ECB raises rates instead")
+        row = store.get_cluster(self.conn, "c1")
+        self.assertIsNone(row["headline_zh"])
+
+    def test_canonical_and_zh_caches_do_not_collide(self):
+        # 同一条法文：canonical(英文) 与展示(中文) 各存各的 key，互不覆盖
+        h_en = translate._hash("fr", "La BCE abaisse ses taux", "en")
+        h_zh = translate._hash("fr", "La BCE abaisse ses taux", "zh")
+        self.assertNotEqual(h_en, h_zh)
+        # en 目标保持旧 key（不含前缀），存量 canonical 缓存不失效
+        self.assertEqual(h_en, translate._hash("fr", "La BCE abaisse ses taux"))
+
+
 if __name__ == "__main__":
     unittest.main()

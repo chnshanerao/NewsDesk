@@ -25,7 +25,9 @@ class FrontendExperienceTests(unittest.TestCase):
 
     def test_body_preview_prefers_extracted_article(self):
         script = (ROOT / "web" / "app.js").read_text()
-        self.assertIn("lead?.body||lead?.summary", script.replace(" ", ""))
+        # 正文优先级：中文模式先用 body_zh，再回退原文 body，最后才是入库摘要。
+        self.assertIn("bodyText||lead?.summary", script.replace(" ", ""))
+        self.assertIn("lead.body_zh:lead?.body", script.replace(" ", ""))
         self.assertIn("展示${fromBody?\"原文正文\":\"入库摘要\"}的前", script)
 
     def test_two_axes_are_explained_and_never_merged(self):

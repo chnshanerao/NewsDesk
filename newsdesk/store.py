@@ -391,7 +391,7 @@ CREATE INDEX IF NOT EXISTS idx_source_scorecards_latest
     ON source_scorecards(source_id,computed_ts DESC);
 """
 
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 
 def _ensure_column(conn, table, name, declaration):
@@ -526,6 +526,17 @@ def _translation_layer(conn):
     """)
 
 
+def _display_translation(conn):
+    """展示用中文译文列。canonical(英文) 只供聚类/印证，用户看的是这两列。
+
+    与 canonical 各走各的：canonical 让外文进英文桥参与印证；这里把外文（含英文）
+    译成中文供默认展示。原文 headline/body 一律不动，前端可切回「原文」。
+    headline_zh 在 upsert_cluster 里当 headline 变化时被重置为 NULL，据此重译。
+    """
+    _ensure_column(conn, "clusters", "headline_zh", "TEXT")
+    _ensure_column(conn, "items", "body_zh", "TEXT")
+
+
 MIGRATIONS = (
     (1, "baseline", _baseline),
     (2, "evidence_and_source_health", _evidence_health),
@@ -548,6 +559,7 @@ MIGRATIONS = (
     (17, "cluster_doubt_axis", _cluster_doubt),
     (18, "source_governance_scorecards", _source_governance),
     (19, "canonical_title_translation", _translation_layer),
+    (20, "display_translation_zh", _display_translation),
 )
 
 
@@ -685,8 +697,10 @@ def items_needing_body(conn, limit: int, skip_sources: set[str] | None = None
 def save_item_bodies(conn, results: list[tuple[str, str, str]]) -> None:
     """results 为 (item_id, state, text)。state 一律写入，空正文也要记账。"""
     now = int(time.time())
+    # 写正文即清空中文译文（body_zh），交给展示翻译层按新正文重译。正文抽取是一次性的
+    # （body_state 一旦置位就不再回头），所以这里置空不会造成反复翻译。
     conn.executemany(
-        "UPDATE items SET body=?, body_state=?, body_ts=? WHERE id=?",
+        "UPDATE items SET body=?, body_state=?, body_ts=?, body_zh=NULL WHERE id=?",
         [(text or None, state, now, iid) for iid, state, text in results])
     conn.commit()
 
@@ -713,6 +727,10 @@ def upsert_cluster(conn, c: dict) -> None:
         "last_ts=excluded.last_ts,n_items=excluded.n_items,n_groups=excluded.n_groups,"
         "best_tier=excluded.best_tier,topics=excluded.topics,cred=excluded.cred,"
         "cred_code=excluded.cred_code,cred_label=excluded.cred_label,"
+        # headline 变了（换了领头稿）就把中文译文清空，交给展示翻译层重译；没变则保留，
+        # 避免每轮重复翻译。新插入的行不含 headline_zh 列，默认 NULL 由翻译层补齐。
+        "headline_zh=CASE WHEN clusters.headline=excluded.headline "
+        "THEN clusters.headline_zh ELSE NULL END,"
         "relevance=excluded.relevance,rank=excluded.rank,breakdown=excluded.breakdown,"
         # 只有事件成员与文本内容未变化时才复用旧 LLM 结论。
         "llm=CASE WHEN clusters.content_hash=excluded.content_hash "
