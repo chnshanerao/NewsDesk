@@ -1,5 +1,5 @@
 "use strict";
-const $=s=>document.querySelector(s),esc=v=>{const d=document.createElement("div");d.textContent=v??"";return d.innerHTML};
+const $=s=>document.querySelector(s),esc=v=>{const d=document.createElement("div");d.textContent=v??"";return d.innerHTML.replace(/"/g,"&quot;")};
 let state={person:"",personCategory:"investor",theme:"",period:180,view:"ledger",items:[],triage:[],selected:"",people:{},personItems:[],periods:[]};
 async function api(url){const r=await fetch(url);if(!r.ok)throw new Error(`${r.status} ${await r.text()}`);return r.json()}
 async function apiAuth(url,opt={},retried=false){const headers=new Headers(opt.headers||{});const token=sessionStorage.getItem("newsdeskWriteToken");if(token)headers.set("X-Newsdesk-Token",token);const r=await fetch(url,{...opt,headers});if(r.status===401&&!retried){const e=prompt("请输入 NEWSDESK 管理令牌（服务器 data/admin-token）");if(e){sessionStorage.setItem("newsdeskWriteToken",e.trim());return apiAuth(url,opt,true)}}if(!r.ok)throw new Error(`${r.status} ${await r.text()}`);return r.json()}

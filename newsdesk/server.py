@@ -752,6 +752,8 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
                     return self._send(200, body.encode(), "text/plain; version=0.0.4; charset=utf-8")
 
                 if p == "/api/source-review":
+                    if not self._write_authenticated():
+                        return self._json({"error": "admin token required"}, 401)
                     window = str(q.get("window", ""))
                     review = source_scores.governance_review(
                         conn, reg, profile,
@@ -792,7 +794,7 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
                             "transport_status": h.get("transport_status", "unknown"),
                             "parse_status": h.get("parse_status", "unknown"),
                             "freshness_status": h.get("freshness_status", "unknown"),
-                            "last_error": h.get("last_error"),
+                            "last_error": (h.get("last_error") if self._write_authenticated() else None),
                             "last_items": h.get("last_items", 0),
                             "last_ok_ts": h.get("last_ok_ts"),
                             "newest_ts": h.get("newest_ts"),
@@ -868,7 +870,10 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
                                       "text/markdown; charset=utf-8")
 
                 if p == "/api/refresh_status":
-                    return self._json(_refresh_state)
+                    # 匿名访问只回运行状态；log 明细（含内部信源清单/错误路径）需令牌
+                    if self._write_authenticated():
+                        return self._json(_refresh_state)
+                    return self._json({k: v for k, v in _refresh_state.items() if k not in ("log", "error")})
 
                 return self._send(404, b"not found", "text/plain; charset=utf-8")
             finally:

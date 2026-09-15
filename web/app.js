@@ -29,7 +29,7 @@ function sourceKind(x) {
   return {key:"media",label:"独立媒体报道",hint:"媒体报道；独立性按媒体集团去重"};
 }
 
-function esc(v) { const d=document.createElement("div"); d.textContent=v??""; return d.innerHTML; }
+function esc(v) { const d=document.createElement("div"); d.textContent=v??""; return d.innerHTML.replace(/"/g,"&quot;"); }
 function time(ts) { return ts ? new Date(ts*1000).toLocaleString("zh-CN", {hour12:false, month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}) : "—"; }
 async function api(url,opt={},retried=false){const method=(opt.method||"GET").toUpperCase(),headers=new Headers(opt.headers||{}),token=sessionStorage.getItem("newsdeskWriteToken");if(method!=="GET"&&token)headers.set("X-Newsdesk-Token",token);const r=await fetch(url,{...opt,headers});if(r.status===401&&method!=="GET"&&!retried){const entered=prompt("请输入 NEWSDESK 管理令牌（服务器 data/admin-token）");if(entered){sessionStorage.setItem("newsdeskWriteToken",entered.trim());return api(url,opt,true)}}if(!r.ok)throw new Error(`${r.status} ${await r.text()}`);return r.json()}
 function toast(msg) { const n=document.createElement("div"); n.className="toast"; n.textContent=msg; document.body.append(n); setTimeout(()=>n.remove(),2600); }
