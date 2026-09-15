@@ -13,6 +13,7 @@ import re
 import hashlib
 
 from . import config
+from .crosslingual import is_digest
 
 # ---- 内容质量词表（规则层，故意保持可读、可改）----
 CLICKBAIT = [
@@ -251,8 +252,17 @@ def score_cluster(items: list[dict], profile: dict, tier_weight: dict,
     auth, best_tier, auth_note = authority(items, tier_weight)
     corr, corr_note = corroboration(len(independent_groups), best_tier, roles)
 
-    # 用最高权威信源的标题当事件标题——避免用标题党当门面
-    lead = sorted(items, key=lambda it: (int(it["tier"]),
+    # 用最高权威信源的标题当事件标题——避免用标题党当门面。
+    # 汇总稿排最后：它两百字装 N 件事，当门面等于把「IT早报 0914：…」贴在事件上，
+    # 用户看到的不是这件事，而是一份目录。同集团重复发布的汇总稿仍会聚成一簇，
+    # 只是不再由它代表这件事。
+    def _is_digest(member: dict) -> bool:
+        feat = member.get("xl_features")
+        if feat is not None:
+            return feat.digest
+        return is_digest(member.get("canonical_title") or member["title"])
+
+    lead = sorted(items, key=lambda it: (_is_digest(it), int(it["tier"]),
                                          -len(it["title"])))[0]
     bodies = [it.get("summary") or "" for it in items]
     cont, cont_detail = content_quality(lead["title"], bodies)

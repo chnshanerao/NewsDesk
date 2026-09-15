@@ -68,6 +68,13 @@ BODY_THIN_SUMMARY_CHARS = int(os.getenv("NEWSDESK_BODY_THIN_SUMMARY_CHARS", "80"
 CLUSTER_WINDOW_H = int(os.getenv("NEWSDESK_CLUSTER_WINDOW_H", "72"))  # 只在窗口内合并
 JACCARD_THRESHOLD = 0.42        # 字符二元组 Jaccard 相似度阈值
 SIMHASH_MAX_DIST = 6            # simhash 汉明距离阈值（64 位）
+# 同脚本（en↔de / en↔en / zh↔zh）「同实体 + 同事件类型 + 无期次/取值冲突」
+# 补召回的词面下限。取 0.20 是实测出来的：72h 生产语料里靠这条路够格的 61 对，
+# 逐条人工看过，49 对合并中 48 对确为同一件事（唯一的例外还是链式漂移带进来的，
+# 不是这条规则直接判的）。再高就开始漏真事：0.28 只剩 22 对，0.35 只剩 13 对，
+# 而 OpenAI「今年不上市」那件 12 家报道的事正好卡在 0.20–0.23 这一段。
+CLUSTER_SAME_SCRIPT_FLOOR = float(
+    os.getenv("NEWSDESK_CLUSTER_SAME_SCRIPT_FLOOR", "0.20"))
 
 # ---- 可信度权重（四个维度，和为 1）----
 W_AUTHORITY = 0.40      # 信源权威度

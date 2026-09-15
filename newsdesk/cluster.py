@@ -9,7 +9,7 @@
 from collections import defaultdict
 
 from . import config
-from .crosslingual import bridge_score, features
+from .crosslingual import bridge_score, different_periods, features
 from .normalize import hamming, jaccard, overlap
 
 
@@ -86,8 +86,9 @@ def conflicting(a: dict, b: dict, rare: dict[str, set[str]]) -> str | None:
 
 def similarity(a: dict, b: dict) -> float:
     ga, gb = a["grams"], b["grams"]
-    cross = bridge_score(a.get("xl_features") or features(_clust_title(a)),
-                         b.get("xl_features") or features(_clust_title(b)))
+    fa = a.get("xl_features") or features(_clust_title(a))
+    fb = b.get("xl_features") or features(_clust_title(b))
+    cross = bridge_score(fa, fb)
     if not ga or not gb:
         return cross
     j = jaccard(ga, gb)
@@ -100,7 +101,38 @@ def similarity(a: dict, b: dict) -> float:
         return max(ov * 0.9, 0.55)
     if h <= config.SIMHASH_MAX_DIST and j >= 0.25:
         return max(0.5, 1 - h / 12)
+    # 改写标题的同一件事就落在这一档：同一家、同一类动作、词面确有重合，
+    # 但重合度够不到上面的门槛。实测（72h 生产语料，1963 对同语言同实体配对）
+    # 同题稿集中在 j 0.26–0.45，异题稿在 0.15 以下，中间有可用空档：
+    #   TechCrunch「Altman says it would be 'ill-advised' to go public in 2026」
+    #   Tech Xplore「Altman tells Fortune OpenAI will not go public in 2026」
+    #   j=0.353 —— 两个独立集团报同一件事，却各自成簇、各自 n_groups=1。
+    # 跨脚本不走这条：zh↔en 词面本来就不重合，j 没有鉴别力，那由 bridge_score
+    # 和 canonical 译文负责；这里只补同脚本（en↔de、en↔en、zh↔zh）的召回。
+    # 结构化否决与跨脚本桥接保持同一套：不同期次（8 月更新 vs 9 月更新）、
+    # 互斥取值，都不能因为「同一家 + 同一类动作 + 词面有点像」就变成一件事。
+    if (j >= config.CLUSTER_SAME_SCRIPT_FLOOR
+            and fa.has_cjk == fb.has_cjk
+            and (fa.entities & fb.entities) and (fa.events_broad & fb.events_broad)
+            and not different_periods(fa.periods, fb.periods)
+            and not (fa.numbers and fb.numbers and not (fa.numbers & fb.numbers))):
+        return 0.6
     return max(j, cross)
+
+
+def _drift_ok(it: dict, items: list[dict], best_j: int, root: int,
+              seed_of: dict, rare: dict) -> bool:
+    """合并前的防链式漂移复检：新成员必须也像簇种子（最早那篇），且与种子无冲突。
+
+    single-link 的老毛病是 A~B、B~C、C~D 一路连下去，最后 A 和 D 毫无关系，
+    这道复检就是拦它的。曾试过两种更宽的口径（种子不像时改看「该簇已有 >=2 篇
+    成员各自与本条够格」，或「与全簇 gram 并集的包含度」），72h 生产语料实测：
+    多合并 20–60 个簇，AI 印证率一动不动（0.0259 → 0.0260）。
+    放宽没有收益就只是风险，所以两种都没留。
+    """
+    seed = seed_of.get(root, root)
+    return seed == best_j or (similarity(it, items[seed]) >= 0.42
+                              and not conflicting(it, items[seed], rare))
 
 
 def build(items: list[dict]) -> dict[str, list[dict]]:
@@ -126,7 +158,8 @@ def build(items: list[dict]) -> dict[str, list[dict]]:
         it["xl_features"] = features(_clust_title(it))
 
     seed_of: dict[int, int] = {}   # root -> seed item index
-    rejected = 0
+    rejected = 0                   # 相似度够但被 conflicting 否决
+    drifted = 0                    # 相似度够但被防漂移复检否决
 
     for i, it in enumerate(items):
         cand: dict[int, int] = defaultdict(int)
@@ -140,25 +173,38 @@ def build(items: list[dict]) -> dict[str, list[dict]]:
             for j in xl_index[key]:
                 cand[j] += 2
 
-        best_j, best_sim = -1, 0.0
+        # 汇总稿（一条标题装 N 件事）只允许跟同一媒体集团自己的稿子合并。
+        # 跨集团合并会把不相干的事粘成一簇，还会伪造出「两家独立报道」：
+        # 实测有个 n_items=8 / n_groups=2 的簇，印证完全是 IT早报 粘出来的。
+        digest_i = it["xl_features"].digest
+        ranked: list[tuple[float, int]] = []
         for j, shared in cand.items():
             if shared < 2:
                 continue
-            sim = similarity(it, items[j])
-            if sim > best_sim and not conflicting(it, items[j], rare_tokens):
-                best_j, best_sim = j, sim
-            elif sim >= 0.5:
+            other = items[j]
+            if digest_i or other["xl_features"].digest:
+                if (it.get("grp") or "") != (other.get("grp") or ""):
+                    continue
+            sim = similarity(it, other)
+            if sim < 0.5:
+                continue
+            if conflicting(it, other, rare_tokens):
                 rejected += 1
+                continue
+            ranked.append((sim, j))
+        ranked.sort(reverse=True)
 
-        if best_j >= 0 and best_sim >= 0.5:
+        # 按相似度从高到低逐个试，直到有一个通过防漂移复检。
+        # 旧写法只取最优候选：它一旦被复检挡下，这条稿子就直接放弃归属，
+        # 哪怕第二优的候选完全合规。
+        for best_sim, best_j in ranked[:6]:
             root = dsu.find(best_j)
-            seed = seed_of.get(root, root)
-            # 防链式漂移：必须也像簇种子，且与种子无实体/数字冲突
-            if seed == best_j or (similarity(it, items[seed]) >= 0.42
-                                  and not conflicting(it, items[seed], rare_tokens)):
+            if _drift_ok(it, items, best_j, root, seed_of, rare_tokens):
+                seed = seed_of.get(root, root)
                 dsu.union(i, best_j)
-                new_root = dsu.find(i)
-                seed_of[new_root] = min(seed, i)
+                seed_of[dsu.find(i)] = min(seed, i)
+                break
+            drifted += 1
 
         for g in keys:
             index[g].append(i)
@@ -166,6 +212,7 @@ def build(items: list[dict]) -> dict[str, list[dict]]:
             xl_index[key].append(i)
 
     build.last_rejected = rejected
+    build.last_drifted = drifted
 
     groups: dict[int, list[dict]] = defaultdict(list)
     for i, it in enumerate(items):

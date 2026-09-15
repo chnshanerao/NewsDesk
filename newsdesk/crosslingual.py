@@ -115,6 +115,48 @@ EVENT_ALIASES = {
                  "upgrades forecast", "downgrades forecast"),
 }
 
+# 宽松事件词表：**只**用于 cluster.similarity 的同脚本补召回，绝不参与跨脚本桥接。
+#
+# 为什么分两张表：跨脚本桥接没有词面兜底（zh↔en 的 jaccard 近乎 0），
+# 一旦实体+事件命中就直接判 0.56/0.72 并合并，所以 EVENT_ALIASES 必须极窄 ——
+# 前面那条「不收裸『发布』」的注释就是实测精度掉到 0.90 换来的。
+# 同脚本这条新路要求词面重合度先过 CLUSTER_SAME_SCRIPT_FLOOR，事件类型只是
+# 第二道证据，因此可以放宽到 AI 行业常见但不够独特的动作词。
+# 实测（72h 生产语料）这条路要抓的就是这类：
+#   Handelsblatt「OpenAI-Chef verschiebt den Börsengang」
+#   Die Zeit「OpenAI-Chef: Börsengang nicht mehr in diesem Jahr」  j=0.364
+#   —— 两个独立集团、同一件事，词面够不到 0.5，事件词表里也没有「推迟上市」。
+EVENT_ALIASES_BROAD = {
+    "ipo": ("首次公开募股", "上市", "挂牌", "ipo", "go public", "goes public",
+            "going public", "börsengang", "entrée en bourse", "cotation"),
+    "delay": ("推迟", "延期", "跳票", "暂缓", "delays", "delayed", "postpones",
+              "postponed", "pushed back", "on hold", "verschiebt", "verschoben",
+              "verschieben", "reporté", "reporte"),
+    "warning": ("警告", "警示", "示警", "风险提示", "敦促", "呼吁",
+                "warns", "warned", "warning", "warnings", "cautions", "urges",
+                "alarm", "warnt", "warnung", "fordert", "avertit",
+                "met en garde"),
+    "talent": ("离职", "出走", "挖来", "挖角", "扩招", "招聘", "入职", "加盟",
+               "hires", "hiring", "poaches", "poached", "recruits", "departs",
+               "quits", "appointed", "gekündigt", "recrute", "débauche"),
+    "retire": ("退役", "停用", "下线", "淘汰", "停止支持", "终止支持",
+               "retires", "retired", "deprecates", "deprecated", "sunsets",
+               "discontinues", "shuts down", "ends support", "stellt ein"),
+    "testing": ("灰度测试", "内测", "公测", "实测", "评测", "试用", "跑分",
+                "tests", "testing", "tested", "trial", "beta", "evaluates",
+                "testet", "teste"),
+    "integration": ("接入", "集成", "打通", "兼容", "内置", "搭载", "整合", "移植",
+                    "integrates", "integration", "adds support", "built on",
+                    "works with", "joins", "compatible", "integriert"),
+    "safety_incident": ("事故", "失控", "越狱", "漏洞", "幻觉", "数据泄露",
+                        "incident", "malfunction", "jailbreak", "exploit",
+                        "vulnerability", "data leak", "vorfall"),
+    "cooperation": ("合作", "联手", "共建", "筹建", "cooperat", "collaborat",
+                    "teams up", "arbeitet zusammen", "s'allie", "alliance"),
+    "code_of_conduct": ("行为准则", "伦理准则", "code of conduct", "verhaltenskodex",
+                        "code de conduite", "guidelines"),
+}
+
 OBJECT_ALIASES = {
     "iphone": ("iphone",), "mac": ("mac", "macbook"),
     "privacy": ("隐私", "privacy"), "antitrust": ("反垄断", "antitrust"),
@@ -184,6 +226,27 @@ CURRENCY_ALIASES = {
     "gbp": ("英镑", "pound sterling", "GBP", "£"),
     "jpy": ("日元", "yen", "JPY", "¥"),
 }
+
+
+# —— 多事汇总稿（digest）——
+# 「IT早报 0914：马斯克、奥尔特曼响应 Anthropic 呼吁放缓前沿 AI 开发；华为麒麟 9050 Pro
+#   能效实测出炉；智谱官宣 50 亿美元融资」—— 一条标题里装了 N 件事。
+# 它对桥接和聚类都是毒药：跟任何共享实体的稿子都「像同一件事」。实测 72h 内 34 个簇
+# 拿这种标题当事件门面，其中一个 n_items=8 / n_groups=2 的「独立印证」，
+# 完全是它把八件不相干的事粘进同一簇粘出来的 —— 既污染标题，又伪造印证。
+# 判据刻意保守：只认栏目名和多段分隔符，不猜语义（猜语义会误伤正常标题）。
+_DIGEST_MARKER = re.compile(
+    r"早报|晚报|日报|周报|晨报|晨会|午评|晚评|快讯|要闻|速览|盘点|早知道|一周回顾|"
+    r"news roundup|roundup|news digest|in brief|week in review|morning brief|"
+    r"im überblick|kurz & knapp|news kompakt|en bref|l'essentiel", re.I)
+_DIGEST_SEPARATORS = re.compile(r"[；;丨|‖]")
+
+
+def is_digest(title: str) -> bool:
+    """一条标题是否装了多件事（≥3 段短讯，或本身就是栏目化汇总）。"""
+    text = title or ""
+    return bool(_DIGEST_MARKER.search(text)
+                or len(_DIGEST_SEPARATORS.findall(text)) >= 2)
 
 
 def _contains(text: str, alias: str) -> bool:
@@ -277,18 +340,34 @@ class Features:
     currencies: frozenset[str]
     has_cjk: bool
     has_latin: bool
+    # 多事汇总稿。带默认值：旧调用点/测试里按位置构造 Features 的不受影响。
+    digest: bool = False
+    # events ∪ 宽松词表。只给同脚本补召回用，跨脚本桥接仍只看 events。
+    events_broad: frozenset[str] = frozenset()
 
     @property
     def bridge_keys(self) -> frozenset[str]:
+        # 汇总稿连候选都不进：它提到 Anthropic 不代表它在讲 Anthropic 那件事。
+        if self.digest:
+            return frozenset()
         return frozenset(f"xl:{entity}:{event}"
                          for entity in self.entities for event in self.events)
 
 
 def features(title: str) -> Features:
-    return Features(_labels(title, ENTITY_ALIASES), _labels(title, EVENT_ALIASES),
-                    _labels(title, OBJECT_ALIASES), _numbers(title), periods(title),
-                    _labels(title, CURRENCY_ALIASES), bool(_CJK_RE.search(title)),
-                    bool(_LATIN_RE.search(title)))
+    events = _labels(title, EVENT_ALIASES)
+    return Features(
+        entities=_labels(title, ENTITY_ALIASES),
+        events=events,
+        objects=_labels(title, OBJECT_ALIASES),
+        numbers=_numbers(title),
+        periods=periods(title),
+        currencies=_labels(title, CURRENCY_ALIASES),
+        has_cjk=bool(_CJK_RE.search(title)),
+        has_latin=bool(_LATIN_RE.search(title)),
+        digest=is_digest(title),
+        events_broad=events | _labels(title, EVENT_ALIASES_BROAD),
+    )
 
 
 _ORDINALS = {"一": 1, "二": 2, "三": 3, "四": 4, "上": 1, "下": 2,
@@ -340,6 +419,9 @@ def different_periods(a: frozenset[str], b: frozenset[str]) -> bool:
 def bridge_score(a: Features, b: Features) -> float:
     """Return zero when evidence is insufficient or structured values conflict."""
     if not ((a.has_cjk and b.has_latin) or (b.has_cjk and a.has_latin)):
+        return 0.0
+    # 汇总稿不参与桥接：它提到的实体不等于它在讲那件事。
+    if a.digest or b.digest:
         return 0.0
     if not (a.entities & b.entities) or not (a.events & b.events):
         return 0.0

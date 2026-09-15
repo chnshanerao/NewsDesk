@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 from newsdesk import cluster, config, credibility, fetch, pipeline, server, store
-from newsdesk.crosslingual import bridge_score, features
+from newsdesk.crosslingual import bridge_score, features, is_digest
 from newsdesk.normalize import gram_set, parse_time, simhash, tokens
 
 
@@ -135,6 +135,81 @@ class CrossLingualClusterTests(unittest.TestCase):
         for zh, en in negatives:
             with self.subTest(zh=zh):
                 self.assertEqual(bridge_score(features(zh), features(en)), 0.0)
+
+
+class SameScriptRewriteTests(unittest.TestCase):
+    """同一家媒体集团之外，同一件事被各家改写标题后词面重合度掉到 0.2–0.45，
+    够不到 0.5 的合并门槛；跨脚本桥接又帮不上（同为拉丁字母 / 同为中文）。
+    实测后果：72h 窗口里「OpenAI 今年不上市」这一件事被拆成 13 个簇、
+    牵涉 12 个独立媒体集团，每家各自 n_groups=1 —— 本窗口印证最充分的事，
+    在指标上等于零。用例全部取自生产语料的真实标题。"""
+
+    def test_rewritten_english_headlines_merge(self):
+        a = _item("a", "OpenAI's Sam Altman says it would be 'ill-advised' "
+                       "to go public in 2026")
+        b = _item("b", "Altman tells Fortune OpenAI will not go public in 2026")
+        self.assertEqual(len(cluster.build([a, b])), 1)
+
+    def test_rewritten_chinese_headlines_merge(self):
+        a = _item("a", "智谱宣布完成约 50 亿美元融资，用于下一代 GLM 基础模型研发")
+        b = _item("b", "智谱获 50 亿美元融资，押注完全自训练与算力")
+        self.assertEqual(len(cluster.build([a, b])), 1)
+
+    def test_rewritten_german_headlines_merge(self):
+        a = _item("a", "Künstliche Intelligenz: OpenAI-Chef verschiebt den Börsengang")
+        b = _item("b", "Künstliche Intelligenz: OpenAI-Chef: Börsengang nicht mehr "
+                       "in diesem Jahr")
+        self.assertEqual(len(cluster.build([a, b])), 1)
+
+    def test_same_company_same_action_but_different_month_does_not_merge(self):
+        # 补召回必须带着和跨脚本桥接同一套结构化否决：8 月的兼容事故
+        # 和 9 月的兼容事故是两件事，不能因为「都是微软 + 都是兼容问题」就并起来。
+        a = _item("a", "部分 AMD 用户反馈 9 月微软 Win11 更新遇兼容问题，引发死机等故障")
+        b = _item("b", "部分联想笔记本用户反馈不兼容微软 8 月 Win11 更新，导致随机断电")
+        self.assertEqual(len(cluster.build([a, b])), 2)
+
+
+class DigestClusterTests(unittest.TestCase):
+    """汇总稿（早报/周报/roundup）一条标题装 N 件事。它提到的实体不等于它在讲那件事：
+    实测 72h 内 34 个簇拿这种两百字标题当事件门面，其中一个 n_items=8 / n_groups=2
+    的「独立印证」，完全是 IT早报 把八件不相干的事粘进同一簇粘出来的。"""
+
+    DIGEST = ("IT早报 0914：马斯克、奥尔特曼响应 Anthropic 呼吁放缓前沿 AI 开发；"
+              "华为麒麟 9050 Pro 能效实测出炉；智谱官宣 50 亿美元融资")
+
+    @staticmethod
+    def _gitem(item_id, title, grp):
+        item = _item(item_id, title)
+        item.update({"grp": grp, "tier": 1, "source_name": grp, "summary": "",
+                     "published_ts": 1000, "fetched_ts": 1000, "src_role": "reporting"})
+        return item
+
+    def test_digest_is_recognised_and_never_bridges(self):
+        self.assertTrue(is_digest(self.DIGEST))
+        self.assertTrue(is_digest("Chip Industry Technical Paper Roundup: Sept. 14"))
+        self.assertFalse(is_digest("Anthropic CEO公开信：呼吁放慢AI模型的发展速度"))
+        single = "Anthropic CEO outlines plan to slow AI development"
+        self.assertEqual(0.0, bridge_score(features(self.DIGEST), features(single)))
+
+    def test_digest_does_not_absorb_a_single_story_from_another_group(self):
+        digest = self._gitem("d", self.DIGEST, "ithome")
+        story = self._gitem("s", "Anthropic CEO outlines plan to slow AI development",
+                            "techcrunch")
+        self.assertEqual(len(cluster.build([digest, story])), 2)
+
+    def test_digest_still_dedupes_within_its_own_group(self):
+        # 同一集团两个频道转同一份早报，那是同一份东西，该合。
+        a = self._gitem("a", self.DIGEST, "chinanews")
+        b = self._gitem("b", self.DIGEST, "chinanews")
+        self.assertEqual(len(cluster.build([a, b])), 1)
+
+    def test_digest_never_becomes_the_event_headline(self):
+        digest = self._gitem("d", self.DIGEST, "ithome")
+        story = self._gitem("s", "智谱宣布完成 50 亿美元融资", "ithome")
+        profile = {"topics": {}, "muted_keywords": [], "noise_keywords": [],
+                   "boost_keywords": []}
+        result = credibility.score_cluster([digest, story], profile, {1: 0.8}, now=1000)
+        self.assertEqual(result["headline"], "智谱宣布完成 50 亿美元融资")
 
 
 class RelevanceTests(unittest.TestCase):
