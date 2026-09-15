@@ -11,7 +11,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import (alerting, config, digest, entities, evidence, markets, movements, ops,
-               pipeline, quality, research, search, source_scores, store)
+               pipeline, quality, research, search, source_scores, store, tts)
 from .normalize import now_ts
 
 _refresh_lock = threading.Lock()
@@ -259,6 +259,11 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
                 return self._static("movement-demo.html")
             if p in ("/movements", "/movements.html"):
                 return self._static("movements.html")
+            # 管理后台是独立页面，和读者页完全分开（读者页不再挂任何管理控件）。
+            # 页面本身是静态壳，进去先要过令牌校验（/api/admin/verify）才拉数据；
+            # 写操作照旧由 _write_authenticated 在服务端拦，前端 gate 只是界面分离。
+            if p in ("/admin", "/admin.html", "/console"):
+                return self._static("admin.html")
             if p.startswith("/static/"):
                 return self._static(p[len("/static/"):])
             if p == "/favicon.ico":
@@ -872,12 +877,48 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
                                       "text/markdown; charset=utf-8")
 
                 if p == "/api/admin/verify":
-                    # 管理模式解锁：仅校验现有写令牌是否有效，不返回任何数据。
-                    # 用于前端把管理专用控件（信源/质量/监控/刷新等）从默认视图里隐藏起来，
-                    # 输入正确令牌后再显示。数据本身是公开的，这里只做界面减负，不是数据边界。
+                    # 管理后台（/admin.html）的登录闸门：仅校验写令牌是否有效，不返回任何数据。
+                    # 它决定的是「要不要把后台界面渲染出来」，不是数据边界 —— 只读数据本来公开，
+                    # 真正的写权限由每个写接口各自的 _write_authenticated() 拦。
                     if self._write_authenticated():
                         return self._json({"ok": True})
                     return self._json({"error": "unauthorized"}, 401)
+
+                if p == "/api/tts/audio":
+                    # 同源播放缓存里的音频字节。上游 URL 只保 24 小时且是外部域名，
+                    # 页面 CSP 是 default-src 'self'，所以音频一律由这里出。
+                    clip = tts.audio(conn, str(q.get("h", "")))
+                    if not clip:
+                        return self._send(404, b"not found", "text/plain; charset=utf-8")
+                    return self._send(200, clip["bytes"], clip["mime"])
+
+                if p == "/api/tts/usage":
+                    # 公开只读：前端启动时读一次，决定这次朗读走云端还是浏览器语音。
+                    # 不含 key、不含任何凭据，只有额度数字。
+                    return self._json(tts.usage(conn))
+
+                if p == "/api/translate-usage":
+                    # 翻译 token 记账（translate_usage 由 translate.py 懒建表）。
+                    # 管理后台用来核对「预估 vs 实际」，所以要令牌。
+                    if not self._write_authenticated():
+                        return self._json({"error": "unauthorized"}, 401)
+                    days = max(1, min(90, int(q.get("days", 7))))
+                    since = now_ts() - days * 86400
+                    try:
+                        rows = [dict(x) for x in conn.execute(
+                            "SELECT kind,model,SUM(calls) calls,SUM(prompt_tokens) prompt,"
+                            "SUM(completion_tokens) completion,COUNT(*) flushes,"
+                            "MIN(ts) first_ts,MAX(ts) last_ts FROM translate_usage "
+                            "WHERE ts>=? GROUP BY kind,model ORDER BY prompt DESC",
+                            (since,))]
+                    except Exception:
+                        rows = []          # 表还没建（从未翻译过）时不报错，回空。
+                    total = {"calls": sum(x["calls"] or 0 for x in rows),
+                             "prompt": sum(x["prompt"] or 0 for x in rows),
+                             "completion": sum(x["completion"] or 0 for x in rows)}
+                    total["tokens"] = total["prompt"] + total["completion"]
+                    return self._json({"days": days, "rows": rows, "total": total,
+                                       "generated_at": now_ts()})
 
                 if p == "/api/refresh_status":
                     # 匿名访问只回运行状态；log 明细（含内部信源清单/错误路径）需令牌
@@ -892,11 +933,29 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
         def do_POST(self):
             u = urllib.parse.urlparse(self.path)
             if u.path not in ("/api/refresh", "/api/alerts", "/api/alert-events/read",
-                              "/api/watchlist") and not u.path.startswith("/api/movement-review/") \
+                              "/api/watchlist", "/api/tts") and not u.path.startswith("/api/movement-review/") \
                     and not u.path.startswith("/api/movement-complete/"):
                 return self._send(404, b"not found", "text/plain; charset=utf-8")
             if not self._same_origin_write():
                 return self._json({"ok": False, "msg": "拒绝跨站写操作"}, 403)
+            # 朗读是读者功能（老人版），不能要管理令牌 —— 故在令牌闸门之前处理。
+            # 花钱的那道闸在 tts.py：每天 100 条 + 60000 字符双上限，超了返回
+            # ok=False，前端回退到浏览器自带语音，功能不中断。
+            if u.path == "/api/tts":
+                try:
+                    size = int(self.headers.get("Content-Length", "0"))
+                    if size <= 0 or size > 8192:
+                        return self._json({"ok": False, "reason": "invalid_body"}, 400)
+                    body = json.loads(self.rfile.read(size))
+                    if not isinstance(body, dict):
+                        return self._json({"ok": False, "reason": "invalid_body"}, 400)
+                except (ValueError, TypeError, json.JSONDecodeError):
+                    return self._json({"ok": False, "reason": "invalid_body"}, 400)
+                conn = store.connect()
+                try:
+                    return self._json(tts.synthesize(conn, str(body.get("text") or "")))
+                finally:
+                    conn.close()
             if not self._write_authenticated():
                 return self._json({"ok": False, "msg": "需要管理令牌"}, 401)
             if u.path.startswith("/api/movement-review/"):

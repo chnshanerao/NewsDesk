@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>NEWSDESK 管理后台</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-page">
+
+<!-- 管理后台是独立页面：读者页（/）上已经没有任何管理入口，管理员靠这个 URL 进来。
+     页面本身只是静态壳，令牌校验通过才拉数据；写操作照旧由服务端令牌闸门拦。 -->
+<div class="ad-top">
+  <a class="ad-brand" href="/"><b>NEWSDESK</b><span>管理后台</span></a>
+  <div class="spacer"></div>
+  <button class="btn" id="ad-reload" hidden>重新载入</button>
+  <button class="btn" id="ad-logout" hidden>退出管理</button>
+  <div class="clock" id="ad-clock">--:--:--</div>
+</div>
+
+<div class="ad-gate" id="ad-gate">
+  <form class="ad-gate-box" id="ad-form" autocomplete="off">
+    <h1>管理员入口</h1>
+    <p>这里是运维与编辑治理台：信源分档、质量门禁、事件监控、朗读与翻译用量、刷新运维。
+       与读者看到的页面完全分离，读者页不再显示任何管理控件。</p>
+    <label for="ad-token">管理令牌</label>
+    <input type="password" id="ad-token" placeholder="服务器 data/admin-token 里的那串" autocomplete="off">
+    <button class="btn primary" type="submit" id="ad-enter">进入</button>
+    <div class="ad-err" id="ad-err" hidden></div>
+    <div class="note">令牌只留在本次浏览器会话（sessionStorage）：关掉标签页即失效，
+      不写磁盘、不进 URL、不落日志。校验只回「对/不对」，不返回任何数据。</div>
+  </form>
+</div>
+
+<div class="ad-shell" id="ad-shell" hidden>
+  <nav class="ad-nav">
+    <button class="ad-nav-item on" data-sec="overview">概览</button>
+    <button class="ad-nav-item" data-sec="sources">信源治理台</button>
+    <button class="ad-nav-item" data-sec="quality">质量门禁</button>
+    <button class="ad-nav-item" data-sec="alerts">事件监控<em id="ad-unread" hidden>0</em></button>
+    <button class="ad-nav-item" data-sec="watchlist">观察列表</button>
+    <button class="ad-nav-item" data-sec="voice">朗读用量与预算</button>
+    <button class="ad-nav-item" data-sec="translate">翻译 token 账单</button>
+    <button class="ad-nav-item" data-sec="ops">刷新与运维</button>
+    <button class="ad-nav-item" data-sec="research">引用研究台</button>
+    <div class="ad-nav-gap"></div>
+    <a class="ad-nav-item" href="/movements.html">大佬动向 ↗</a>
+    <a class="ad-nav-item" href="/">读者页 ↗</a>
+  </nav>
+  <main class="ad-main" id="ad-main"><div class="note">载入中…</div></main>
+</div>
+
+<script src="/static/admin.js"></script>
+</body>
+</html>

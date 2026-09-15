@@ -1,0 +1,101 @@
+/* 管理后台专属样式。基础色板、按钮、表格、note 沿用 style.css，这里只加后台自己的
+   版式：登录闸门 + 左侧分区导航 + 单栏内容区。后台是给运维/编辑用的，保持密排终端观感，
+   不套读者页的三栏流。 */
+
+.admin-page{padding:0;overflow:auto}
+
+.ad-top{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:12px;
+  padding:10px 16px;background:var(--panel,#11171f);border-bottom:1px solid var(--line,#1e2732)}
+.ad-brand{display:flex;align-items:baseline;gap:8px;text-decoration:none}
+.ad-brand b{font-size:15px;letter-spacing:.14em;color:var(--fg,#d7dee8)}
+.ad-brand span{font-size:12px;color:var(--amber,#f5a623);letter-spacing:.08em}
+.ad-top .spacer{flex:1}
+
+/* ---- 登录闸门 ---- */
+.ad-gate{display:flex;justify-content:center;padding:8vh 16px}
+.ad-gate-box{width:min(520px,100%);display:flex;flex-direction:column;gap:10px;
+  padding:26px 26px 22px;background:var(--panel,#11171f);
+  border:1px solid var(--line,#1e2732);border-radius:10px}
+.ad-gate-box h1{margin:0;font-size:19px;letter-spacing:.04em}
+.ad-gate-box p{margin:0;font-size:13px;line-height:1.75;color:var(--fg-dim,#8a97a8)}
+.ad-gate-box label{margin-top:6px;font-size:12px;color:var(--fg-dim,#8a97a8)}
+.ad-gate-box input{padding:10px 12px;font:inherit;font-size:14px;letter-spacing:.08em;
+  color:var(--fg,#d7dee8);background:var(--bg,#0a0d12);
+  border:1px solid var(--line,#1e2732);border-radius:6px}
+.ad-gate-box input:focus{outline:none;border-color:var(--amber,#f5a623)}
+.ad-gate-box .btn{align-self:flex-start;min-height:38px;padding:0 22px}
+.ad-err{padding:8px 10px;font-size:13px;color:#fff;background:rgba(220,70,70,.18);
+  border:1px solid rgba(220,70,70,.5);border-radius:6px}
+
+/* ---- 主体：左导航 + 单栏内容 ---- */
+.ad-shell{display:grid;grid-template-columns:190px minmax(0,1fr);gap:0;align-items:start}
+.ad-nav{position:sticky;top:47px;display:flex;flex-direction:column;padding:12px 8px;
+  border-right:1px solid var(--line,#1e2732);min-height:calc(100vh - 47px)}
+.ad-nav-item{display:flex;align-items:center;gap:6px;padding:9px 12px;
+  font:inherit;font-size:13px;text-align:left;text-decoration:none;
+  color:var(--fg-dim,#8a97a8);background:none;border:0;border-radius:6px;cursor:pointer}
+.ad-nav-item:hover{color:var(--fg,#d7dee8);background:rgba(255,255,255,.04)}
+.ad-nav-item.on{color:var(--bg,#0a0d12);background:var(--amber,#f5a623);font-weight:600}
+.ad-nav-item em{margin-left:auto;padding:1px 6px;font-style:normal;font-size:11px;
+  color:#fff;background:#c0392b;border-radius:9px}
+.ad-nav-gap{flex:1;min-height:18px}
+
+.ad-main{padding:18px 24px 60px;min-width:0}
+.ad-main h2{margin:0 0 14px;font-size:17px;letter-spacing:.04em}
+.ad-main h3{margin:26px 0 10px;font-size:14px;letter-spacing:.03em;
+  color:var(--amber,#f5a623);display:flex;align-items:center;gap:10px}
+.ad-main h3 .btn{font-size:11px}
+.ad-main table{width:100%;border-collapse:collapse;font-size:12.5px}
+.ad-main table th{text-align:left;font-weight:600;color:var(--fg-dim,#8a97a8);
+  padding:7px 8px;border-bottom:1px solid var(--line,#1e2732);white-space:nowrap}
+.ad-main table td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.05);
+  vertical-align:top}
+.ad-main table tr.off{opacity:.45}
+
+/* 指标卡：概览与用量页共用 */
+.ad-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:10px}
+.ad-card{padding:12px 14px;background:var(--panel,#11171f);
+  border:1px solid var(--line,#1e2732);border-left-width:3px;border-radius:8px}
+.ad-card b{display:block;font-size:22px;line-height:1.25;font-variant-numeric:tabular-nums}
+.ad-card span{display:block;margin-top:2px;font-size:12px;color:var(--fg-dim,#8a97a8)}
+.ad-card em{display:block;margin-top:4px;font-size:11.5px;font-style:normal;color:var(--fg-dim,#8a97a8)}
+.ad-card.ok{border-left-color:var(--good,#0ca30c)}
+.ad-card.warn{border-left-color:var(--warn,#fab219)}
+.ad-card.bad{border-left-color:var(--critical,#d03b3b)}
+
+.ad-todo{margin:6px 0;padding:9px 12px;font-size:13px;line-height:1.7;
+  background:rgba(210,153,34,.10);border-left:3px solid var(--warn,#fab219);border-radius:0 6px 6px 0}
+.ad-todo code{padding:1px 5px;background:rgba(255,255,255,.07);border-radius:4px}
+
+.ad-form-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0}
+.ad-form-row .search{flex:1;min-width:150px;padding:8px 10px;font:inherit;font-size:13px;
+  color:var(--fg,#d7dee8);background:var(--bg,#0a0d12);
+  border:1px solid var(--line,#1e2732);border-radius:6px}
+.ad-form-row .search.ad-narrow{flex:0 0 130px;min-width:110px}
+.ad-form-row .btn{min-height:34px}
+
+/* 用量进度条：条数闸和字符闸各一条，哪道先满一眼可见 */
+.ad-meter{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:12px;
+  color:var(--fg-dim,#8a97a8)}
+.ad-meter span{width:36px}
+.ad-meter b{width:42px;text-align:right;font-variant-numeric:tabular-nums}
+.ad-meter-bar{flex:1;height:8px;background:rgba(255,255,255,.07);border-radius:5px;overflow:hidden}
+.ad-meter-bar i{display:block;height:100%;background:var(--amber,#f5a623)}
+
+.ad-log{max-height:320px;overflow:auto;padding:10px 12px;font-size:11.5px;line-height:1.6;
+  white-space:pre-wrap;background:var(--bg,#0a0d12);
+  border:1px solid var(--line,#1e2732);border-radius:6px}
+
+.ad-main .btn.primary{color:var(--bg,#0a0d12);background:var(--amber,#f5a623);
+  border-color:var(--amber,#f5a623);font-weight:600}
+.ad-gate-box .btn.primary{color:var(--bg,#0a0d12);background:var(--amber,#f5a623);
+  border-color:var(--amber,#f5a623);font-weight:600}
+.ad-main .btn[disabled]{opacity:.5;cursor:default}
+
+@media (max-width:820px){
+  .ad-shell{grid-template-columns:1fr}
+  .ad-nav{position:static;flex-direction:row;flex-wrap:wrap;min-height:0;
+    border-right:0;border-bottom:1px solid var(--line,#1e2732)}
+  .ad-main{padding:14px 14px 50px}
+  .ad-main table{font-size:11.5px}
+}

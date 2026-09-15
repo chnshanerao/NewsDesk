@@ -30,25 +30,43 @@ class FrontendExperienceTests(unittest.TestCase):
         self.assertIn("lead.body_zh:lead?.body", script.replace(" ", ""))
         self.assertIn("展示${fromBody?\"原文正文\":\"入库摘要\"}的前", script)
 
-    def test_admin_controls_are_gated_reader_essentials_are_not(self):
-        """默认视图只留读者必需入口；管理工具用 .admin-only 隐藏，令牌校验后才显示。"""
+    def test_admin_console_is_a_separate_page_not_mixed_into_reader_view(self):
+        """管理后台是独立 URL 的独立页面：读者页上一个管理控件都不留。
+
+        以前是同一个页面用 .admin-only 藏起来、令牌解锁后再显示 —— 两类使用者
+        混在一个界面里，读者顶栏挂着刷新/信源/监控这些跟他无关的按钮。现在彻底拆开。
+        """
         html = (ROOT / "web" / "index.html").read_text()
         script = (ROOT / "web" / "app.js").read_text()
-        # 读者必需的入口不能被隐藏
-        for keep in ('id="btn-ai-radar"', 'id="btn-digest"', 'id="btn-lang"'):
-            i = html.find(keep)
-            self.assertNotEqual(i, -1, keep)
-            line = html[html.rfind("<", 0, i):html.find(">", i) + 1]
-            self.assertNotIn("admin-only", line, f"{keep} 不应被隐藏")
-        # 管理工具必须带 admin-only
-        for gated in ('id="btn-sources"', 'id="btn-quality"', 'id="btn-alerts"',
-                      'id="btn-refresh"', 'id="btn-command"'):
-            i = html.find(gated)
-            line = html[html.rfind("<", 0, i):html.find(">", i) + 1]
-            self.assertIn("admin-only", line, f"{gated} 应被 admin-only 隐藏")
-        self.assertIn('id="btn-lock"', html)          # 解锁入口始终可见
-        self.assertIn("/api/admin/verify", script)    # 令牌走服务端校验
-        self.assertIn("function applyAdmin", script)
+        admin_html = (ROOT / "web" / "admin.html").read_text()
+        admin_js = (ROOT / "web" / "admin.js").read_text()
+        server = (ROOT / "newsdesk" / "server.py").read_text()
+
+        # 读者页：既没有管理按钮，也没有解锁入口，也不再有 admin 模式代码
+        for gone in ('id="btn-sources"', 'id="btn-quality"', 'id="btn-alerts"',
+                     'id="btn-refresh"', 'id="btn-lock"', 'id="btn-research"',
+                     'id="btn-changelog"', "admin-only"):
+            self.assertNotIn(gone, html, f"读者页不该还有 {gone}")
+        for gone in ("function applyAdmin", "function toggleAdmin", "function isAdmin",
+                     "showSources", "showAlerts", "/api/admin/verify"):
+            self.assertNotIn(gone, script, f"app.js 不该还有 {gone}")
+        # 读者页也不再向读者索要管理令牌（他们没有令牌，弹窗只会让人以为坏了）
+        self.assertNotIn("newsdeskWriteToken", script)
+
+        # 管理页：独立入口 + 令牌闸门 + 各治理面板
+        self.assertIn('src="/static/admin.js"', admin_html)
+        self.assertIn('id="ad-token"', admin_html)
+        self.assertIn("/api/admin/verify", admin_js)
+        self.assertIn("sessionStorage", admin_js)      # 令牌不落磁盘
+        self.assertNotIn("localStorage", admin_js)
+        for sec in ("overview", "sources", "quality", "alerts", "watchlist",
+                    "voice", "translate", "ops"):
+            self.assertIn(f'data-sec="{sec}"', admin_html, sec)
+        # 服务端把 /admin、/admin.html、/console 都指到这张静态壳
+        self.assertIn('"/admin", "/admin.html", "/console"', server)
+        self.assertIn('self._static("admin.html")', server)
+        # 拆开的是界面，不是安全边界：写操作照旧由服务端令牌拦
+        self.assertIn("_write_authenticated", server)
 
     def test_senior_mode_is_public_themed_tts_and_plain(self):
         """老人版：顶部常驻入口对所有人可见(非 admin-only)、浅色高对比主题、
@@ -76,6 +94,36 @@ class FrontendExperienceTests(unittest.TestCase):
         for token in ("body.senior", "body.no-tts", ".sr-read", ".sr-btn"):
             self.assertIn(token, css, token)
 
+    def test_senior_mode_is_a_reading_layout_not_a_recolor(self):
+        """老人版改版：第一版只把暗色调成浅色、字号调大，版式还是三栏密排的交易终端 ——
+        『太丑』说的是版式，不是配色。这里锁住改版后真正解决问题的几件事。"""
+        html = (ROOT / "web" / "index.html").read_text()
+        script = (ROOT / "web" / "app.js").read_text()
+        css = (ROOT / "web" / "style.css").read_text()
+        senior = css[css.find("body.senior"):]
+
+        # ① 单栏阅读流：侧栏/KPI/行情条这些终端部件在老人版里必须消失
+        self.assertIn("body.senior .main{", senior.replace("\n", ""))
+        self.assertRegex(senior, r"body\.senior[^{]*\.side[^{]*\{[^}]*display:none")
+        for hide in (".kpis", ".market-strip"):
+            self.assertIn(hide, senior, f"老人版应隐藏 {hide}")
+        # ② 卡片式条目：大圆形可信度徽章 + 不截断的衬线标题
+        self.assertIn("grid-template-areas", senior)
+        self.assertIn("--sr-serif", senior)
+        self.assertIn("-webkit-line-clamp:unset", senior.replace(" ", ""))
+        # ③ 字号三档：状态挂在 body 的 data 属性上，CSS 只管呈现
+        self.assertIn('body.senior[data-srsize="2"]', senior)
+        self.assertIn('body.senior[data-srsize="3"]', senior)
+        for token in ("function bumpSrSize", "function applySrSize",
+                      "dataset.srsize", "SR_SIZES"):
+            self.assertIn(token, script, token)
+        # ④ 老人版专属工具条：顶栏那排小按钮不好点，控制项收在这里
+        self.assertIn('id="sr-font-up"', html)
+        self.assertIn('id="sr-font-dn"', html)
+        self.assertIn('id="sr-exit"', html)      # 一键回标准版，不用去找顶栏按钮
+        self.assertIn(".sr-bar", senior)
+        self.assertIn("$(\"#sr-exit\").onclick=toggleSenior", script)
+
     def test_two_axes_are_explained_and_never_merged(self):
         """存疑度和可信度必须在页面上被讲成两个轴，否则用户会当成同一套分级。"""
         html = (ROOT / "web" / "index.html").read_text()
@@ -88,8 +136,11 @@ class FrontendExperienceTests(unittest.TestCase):
         self.assertIn("存疑判定", script)
 
     def test_source_desk_explains_not_applicable_and_lang_bias(self):
-        """治理台要说清『不适用』不是零分，以及低分语种是我方欠工。"""
-        script = (ROOT / "web" / "app.js").read_text()
+        """治理台要说清『不适用』不是零分，以及低分语种是我方欠工。
+
+        治理台已搬进管理后台，所以这些说明文案要跟着搬 —— 不能在搬家过程中丢掉。
+        """
+        script = (ROOT / "web" / "admin.js").read_text()
         self.assertIn("not_applicable", script)
         self.assertIn("无从抢首发", script)
         self.assertIn("别拿我们的欠工去降别人的档", script)

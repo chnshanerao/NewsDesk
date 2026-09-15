@@ -127,6 +127,32 @@ TRANSLATE_ZH_MAX_PER_RUN = int(os.getenv("NEWSDESK_TRANSLATE_ZH_MAX", "150"))
 # 150/轮 > 入流，既跟得上又能逐轮把存量正文补齐（flash 模型，成本极低）。
 TRANSLATE_ZH_BODY_MAX_PER_RUN = int(os.getenv("NEWSDESK_TRANSLATE_ZH_BODY_MAX", "150"))
 
+# ---- 云端语音合成 TTS（可选，默认关闭）----
+# 老人版的朗读默认用浏览器自带语音：零成本、纯本地。开这一层是为了换更自然的音色，
+# 代价是**按字符计费**（TTS 一律按字符，不按 token）。所以两道每日硬闸门同时生效：
+# 条数上限（用户定的 100 条/天）+ 字符上限（100×600 满配 = 60000）。撞到任一道就
+# 回退浏览器语音，不报错、不拒绝服务。详见 tts.py。
+TTS_ENABLED = os.getenv("NEWSDESK_TTS", "0") == "1"
+# key 只从环境变量读，绝不写进源码/仓库。缺失即静默关闭云端 TTS（优雅降级）。
+# 单列一个 NEWSDESK_TTS_KEY 是因为 TTS 与 LLM 可能不在同一个账号/地域的模型目录里。
+TTS_API_KEY = os.getenv("NEWSDESK_TTS_KEY", "") or os.getenv("DASHSCOPE_API_KEY", "")
+TTS_BASE_URL = os.getenv(
+    "NEWSDESK_TTS_BASE",
+    "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation")
+TTS_MODEL = os.getenv("NEWSDESK_TTS_MODEL", "qwen3-tts-flash")
+TTS_VOICE = os.getenv("NEWSDESK_TTS_VOICE", "Cherry")
+TTS_TIMEOUT = int(os.getenv("NEWSDESK_TTS_TIMEOUT", "20"))
+# 每天最多合成多少条（用户设定：100 条/天）。
+TTS_DAILY_ITEMS = int(os.getenv("NEWSDESK_TTS_DAILY_ITEMS", "100"))
+# 每天字符上限：默认 = 100 条 × 单条 600 字满配。这是钱的那道闸。
+TTS_DAILY_CHARS = int(os.getenv("NEWSDESK_TTS_DAILY_CHARS", "60000"))
+# 单次请求字符上限：qwen-tts 系列上游限 512 token / 其它模型 600 字符，取 600 保守值。
+TTS_MAX_CHARS = int(os.getenv("NEWSDESK_TTS_MAX_CHARS", "600"))
+# 上游音频 URL 保 24 小时；缓存按 20 小时过期，留足安全边际。
+TTS_CACHE_TTL = int(os.getenv("NEWSDESK_TTS_CACHE_TTL", str(20 * 3600)))
+# 计价单位：元 / 万字符（cosyvoice-v3.5-flash 档 ¥0.8）。只用于后台展示花了多少。
+TTS_PRICE_CNY_PER_10K = float(os.getenv("NEWSDESK_TTS_PRICE", "0.8"))
+
 SERVER_HOST = os.getenv("NEWSDESK_HOST", "0.0.0.0")
 SERVER_PORT = int(os.getenv("NEWSDESK_PORT", "8899"))
 REFRESH_TOKEN = os.getenv("NEWSDESK_REFRESH_TOKEN", "")

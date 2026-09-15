@@ -26,8 +26,6 @@ function credLabel(code){ return isSenior() ? (srLabels[code]||labels[code]) : (
 function doubtLabel(code){ return isSenior() ? (srDoubtShort[code]||"") : (doubtLabels[code]||""); }
 const doubtColor = {SUSPECT:"var(--critical)", QUESTIONABLE:"var(--serious)",
                     MINOR:"var(--warn)", CLEAR:"var(--muted)"};
-const gradeLabels = {core:"重点关注", standard:"常规纳入", probation:"观察期",
-                     dormant:"零产出"};
 const topicLabels = {macro:"宏观", policy:"政策", market:"市场", tech:"科技综合",
   ai_research:"AI研究", ai_models:"模型/产品", ai_compute:"算力/芯片",
   ai_open_source:"开源生态", ai_governance:"AI治理", ai_industry:"AI产业",
@@ -46,7 +44,9 @@ function sourceKind(x) {
 
 function esc(v) { const d=document.createElement("div"); d.textContent=v??""; return d.innerHTML.replace(/"/g,"&quot;"); }
 function time(ts) { return ts ? new Date(ts*1000).toLocaleString("zh-CN", {hour12:false, month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}) : "—"; }
-async function api(url,opt={},retried=false){const method=(opt.method||"GET").toUpperCase(),headers=new Headers(opt.headers||{}),token=sessionStorage.getItem("newsdeskWriteToken");if(method!=="GET"&&token)headers.set("X-Newsdesk-Token",token);const r=await fetch(url,{...opt,headers});if(r.status===401&&method!=="GET"&&!retried){const entered=prompt("请输入 NEWSDESK 管理令牌（服务器 data/admin-token）");if(entered){sessionStorage.setItem("newsdeskWriteToken",entered.trim());return api(url,opt,true)}}if(!r.ok)throw new Error(`${r.status} ${await r.text()}`);return r.json()}
+// 读者页不再向任何人索要管理令牌：管理动作已搬到 /admin.html。这里 401 就是 401，
+// 由调用方给出一句人话提示，不弹「请输入令牌」去为难普通读者。
+async function api(url,opt={}){const headers=new Headers(opt.headers||{});const r=await fetch(url,{...opt,headers});if(!r.ok)throw new Error(`${r.status} ${await r.text()}`);return r.json()}
 function toast(msg) { const n=document.createElement("div"); n.className="toast"; n.textContent=msg; document.body.append(n); setTimeout(()=>n.remove(),2600); }
 window.addEventListener("unhandledrejection",event=>{const message=event.reason?.message||String(event.reason||"未知错误");toast(`操作失败：${message}`);event.preventDefault()});
 function color(code) { return ({CONFIRMED:"var(--good)",LIKELY:"var(--warn)",SINGLE:"var(--serious)",LOW:"var(--critical)"})[code]; }
@@ -148,36 +148,36 @@ function renderRows() {
 function syncDispBtn(){const b=$("#btn-lang");if(!b)return;b.textContent=state.disp==="zh"?"🌐 原文":"🌐 中文";b.classList.toggle("on",state.disp==="orig");b.title=state.disp==="zh"?"当前：默认全中文 · 点击查看原文":"当前：显示原文 · 点击切回中文";}
 function toggleDisp(){state.disp=state.disp==="zh"?"orig":"zh";localStorage.setItem("nd_disp",state.disp);syncDispBtn();renderRows();if(state.selected>=0)select(state.selected);}
 
-// 管理模式：默认视图只保留读者需要的入口（新闻/AI雷达/简报/中英切换/上手）；
-// 信源、质量、监控、刷新等管理工具用 .admin-only 隐藏，输入现有写令牌校验通过后才显示。
-// 数据本身公开，这里只是界面减负 —— 不是数据安全边界，别把它当访问控制。
-function isAdmin(){return localStorage.getItem("nd_admin")==="1";}
-function syncLockBtn(){const b=$("#btn-lock");if(!b)return;const on=isAdmin();b.textContent=on?"🔓":"🔒";b.classList.toggle("on",on);b.title=on?"管理模式已开启 · 点击退出":"管理模式（需令牌）";}
-function applyAdmin(){document.body.classList.toggle("admin",isAdmin());syncLockBtn();}
-async function toggleAdmin(){
-  if(isAdmin()){localStorage.removeItem("nd_admin");sessionStorage.removeItem("newsdeskWriteToken");applyAdmin();toast("已退出管理模式");return;}
-  const entered=prompt("请输入 NEWSDESK 管理令牌（服务器 data/admin-token）");
-  if(!entered)return;
-  const token=entered.trim();
-  try{
-    const r=await fetch("/api/admin/verify",{headers:{"X-Newsdesk-Token":token}});
-    if(!r.ok){toast("令牌无效，未进入管理模式");return;}
-    sessionStorage.setItem("newsdeskWriteToken",token);
-    localStorage.setItem("nd_admin","1");
-    applyAdmin();toast("已进入管理模式");
-  }catch(e){toast(`校验失败：${e.message}`);}
-}
+// 管理界面已完全搬到独立页面 /admin.html（令牌登录后才拉数据）。
+// 这个页面从此只有读者视角：没有信源治理、监控规则、刷新、令牌解锁等任何管理入口，
+// 两类使用者不再混在同一个界面里。数据本身仍是公开只读的，写操作由服务端令牌拦。
 
 // ---- 老人版模式 ----
-// 浅色高对比 + 大字 + 大白话 + 朗读。开关只存 localStorage，纯前端，不动数据/服务端。
+// 老人版不是「把暗色终端调亮」——那只是换配色，密排三栏还在，字再大也难读。
+// 这一版是独立的阅读版式：隐掉侧栏/KPI/行情条，单栏居中卡片流，圆形可信度徽标，
+// 衬线大标题，一条一个大朗读按钮，详情整屏展开。开关与字号只存 localStorage，
+// 纯前端，不动数据也不动服务端。
 function isSenior(){return localStorage.getItem("nd_senior")==="1";}
-function syncSeniorBtn(){const b=$("#btn-senior");if(!b)return;const on=isSenior();b.textContent=on?"👓 标准版":"👓 老人版";b.classList.toggle("on",on);b.title=on?"当前：老人版（大字·朗读）· 点击切回标准版":"切换到老人版：浅色高对比、大字、可朗读";}
-function applySenior(){document.body.classList.toggle("senior",isSenior());syncSeniorBtn();}
+// 字号三档：1=大(默认) 2=更大 3=特大。老人视力差异极大，一个固定字号覆盖不了。
+const SR_SIZES=["大","更大","特大"];
+function srSize(){const n=parseInt(localStorage.getItem("nd_srsize")||"1",10);return Math.min(3,Math.max(1,n||1));}
+function applySrSize(){
+  document.body.dataset.srsize=String(srSize());
+  const v=$("#sr-font-val");if(v)v.textContent=SR_SIZES[srSize()-1];
+}
+function bumpSrSize(delta){
+  const next=Math.min(3,Math.max(1,srSize()+delta));
+  if(next===srSize())return toast(delta>0?"已经是最大字号了":"已经是最小字号了");
+  localStorage.setItem("nd_srsize",String(next));applySrSize();
+}
+function syncSeniorBtn(){const b=$("#btn-senior");if(!b)return;const on=isSenior();b.textContent=on?"👓 标准版":"👓 老人版";b.classList.toggle("on",on);b.title=on?"当前：老人版（大字·朗读）· 点击切回标准版":"切换到老人版：大字、浅色护眼、可朗读";}
+function applySenior(){document.body.classList.toggle("senior",isSenior());applySrSize();syncSeniorBtn();}
 function toggleSenior(){
   const on=!isSenior();
   if(on)localStorage.setItem("nd_senior","1");else localStorage.removeItem("nd_senior");
-  applySenior();renderRows();if(state.selected>=0)select(state.selected);
-  toast(on?"已开启老人版：大字、浅色、可朗读":"已切回标准版");
+  applySenior();closeDetail();renderRows();
+  window.scrollTo({top:0});$("#stream")?.scrollTo({top:0});
+  toast(on?"已开启老人版：大字、护眼配色、可朗读":"已切回标准版");
 }
 // 首次访问轻问一句要不要开老人版（用独立 flag，问过一次就不再打扰）。
 function askSenior(){
@@ -189,32 +189,68 @@ function askSenior(){
 }
 
 // ---- 朗读（TTS）----
-// 用浏览器自带的 Web Speech API：零成本、纯客户端、用用户设备上的中文语音。
-// 没有中文语音的浏览器加 body.no-tts，朗读按钮自动隐藏（优雅降级，不报错）。
+// 两层：① 云端合成（音色自然，按字符计费，服务端每天 100 条 + 6 万字符双上限）；
+//      ② 浏览器自带 Web Speech API（零成本、纯本地）。
+// 云端只在服务端开了开关且当天额度还有的时候用；额度用尽、未配置、请求失败一律
+// 静默退回 ②，读者只会觉得声音换了，不会遇到「朗读坏了」。
+// 连 ② 都没有中文语音的浏览器加 body.no-tts，朗读按钮自动隐藏。
 let _ttsVoices=[];
+let _cloudTts=null;      // null=未探测；对象=服务端额度快照
+let _cloudAudio=null;    // 正在播的 <audio>
+async function ttsProbeCloud(){
+  try{ const d=await api("/api/tts/usage"); _cloudTts=(d&&d.enabled&&d.remaining_items>0&&d.remaining_chars>0)?d:false; }
+  catch(_){ _cloudTts=false; }
+  ttsRefreshVoices();   // 云端结论会改变「要不要隐藏朗读按钮」的判断
+}
+function cloudStop(){ if(_cloudAudio){_cloudAudio.pause();_cloudAudio.src="";_cloudAudio=null;} }
+// 返回 true 表示云端接手了；false 表示调用方该走浏览器语音。
+async function cloudSpeak(text,btn){
+  if(_cloudTts===false||_cloudTts===null)return false;
+  try{
+    const r=await api("/api/tts",{method:"POST",headers:{"Content-Type":"application/json"},
+                                 body:JSON.stringify({text})});
+    if(r.usage)_cloudTts=(r.usage.remaining_items>0&&r.usage.remaining_chars>0)?r.usage:false;
+    if(!r.ok||!r.audio)return false;          // 超限/未配置/上游失败 → 交回浏览器语音
+    cloudStop();
+    const a=new Audio(r.audio);
+    _cloudAudio=a;_speakingBtn=btn||null;if(btn)btn.classList.add("speaking");
+    a.onended=a.onerror=()=>{if(_speakingBtn===btn){btn?.classList.remove("speaking");_speakingBtn=null;}if(_cloudAudio===a)_cloudAudio=null;};
+    await a.play();
+    return true;
+  }catch(_){ return false; }
+}
 function ttsSupported(){return typeof window!=="undefined"&&"speechSynthesis" in window&&"SpeechSynthesisUtterance" in window;}
 function ttsRefreshVoices(){
-  if(!ttsSupported())return;
-  _ttsVoices=window.speechSynthesis.getVoices()||[];
+  if(ttsSupported())_ttsVoices=window.speechSynthesis.getVoices()||[];
   const hasZh=_ttsVoices.some(v=>/zh|cmn|中文|chinese/i.test((v.lang||"")+" "+(v.name||"")));
-  // 只有拿到语音列表却无中文语音时才判 no-tts；列表为空(尚未加载)不误判。
-  document.body.classList.toggle("no-tts",_ttsVoices.length>0&&!hasZh);
+  // 只有「云端不可用」且「拿到语音列表却无中文语音」时才判 no-tts 隐藏朗读按钮。
+  // 语音列表为空(尚未加载)不误判；云端可用时本地有没有中文语音都无所谓。
+  const localUsable=!ttsSupported()?false:(_ttsVoices.length===0||hasZh);
+  document.body.classList.toggle("no-tts",!_cloudTts&&!localUsable);
 }
 function ttsInit(){
-  if(!ttsSupported()){document.body.classList.add("no-tts");return;}
+  ttsProbeCloud();   // 不 await：探测失败/慢都不该挡住页面，先按浏览器语音准备着
+  if(!ttsSupported()){return;}   // 云端可用时仍能朗读，故这里不再直接判 no-tts
   ttsRefreshVoices();
   window.speechSynthesis.onvoiceschanged=ttsRefreshVoices;  // 多数浏览器异步返回语音
 }
 let _speakingBtn=null;
 function ttsStop(){
+  cloudStop();
   if(ttsSupported())window.speechSynthesis.cancel();
   if(_speakingBtn){_speakingBtn.classList.remove("speaking");_speakingBtn=null;}
 }
-function speak(text,btn){
-  if(!ttsSupported()){toast("当前浏览器不支持朗读");return;}
+// 入口：先试云端，云端不接手（未配置/超限/失败）再用浏览器语音。
+async function speak(text,btn){
   // 再点同一个按钮 = 停止；否则停掉上一条再念新的。
-  if(_speakingBtn===btn&&window.speechSynthesis.speaking){ttsStop();return;}
+  const playing=_cloudAudio||(ttsSupported()&&window.speechSynthesis.speaking);
+  if(_speakingBtn===btn&&playing){ttsStop();return;}
   ttsStop();
+  if(await cloudSpeak(text,btn))return;
+  browserSpeak(text,btn);
+}
+function browserSpeak(text,btn){
+  if(!ttsSupported()){toast("当前浏览器不支持朗读");return;}
   const u=new SpeechSynthesisUtterance((text||"").replace(/\s+/g," ").trim());
   u.lang="zh-CN";u.rate=0.92;u.pitch=1;
   if(!_ttsVoices.length)ttsRefreshVoices();
@@ -246,16 +282,11 @@ const commands=[
   {name:"查看待证",keys:"2",run:()=>document.querySelector('[data-view="unverified"]').click()},
   {name:"查看噪音",keys:"3",run:()=>document.querySelector('[data-view="noise"]').click()},
   {name:"聚焦搜索标题",keys:"/",run:()=>$("#q").focus()},
-  {name:"刷新全部信源",keys:"R",run:refresh},
-  {name:"打开信源注册表",keys:"S",run:showSources},
   {name:"打开 AI / 科技情报雷达",keys:"I",run:showAIRadar},
-  {name:"打开人物动向",keys:"M",run:()=>location.href="/movements.html"},
-  {name:"打开引用研究工作台",keys:"E",run:showResearch},
-  {name:"查看质量门禁",keys:"Q",run:showQuality},
+  {name:"查看质量门禁与产品边界",keys:"Q",run:showQuality},
   {name:"打开每日简报",keys:"D",run:showDigest},
-  {name:"打开监控规则",keys:"A",run:showAlerts},
   {name:"打开资产观察列表",keys:"W",run:showWatchlist},
-  {name:"查看版本更新",keys:"N",run:()=>showChangelog()},
+  {name:"切换老人版 / 标准版",keys:"",run:toggleSenior},
   {name:"显示快捷键",keys:"?",run:help}
 ];
 let commandIndex=0;
@@ -326,37 +357,9 @@ async function select(i) {
 }
 
 function modal(title,body,cls="") { const m=document.createElement("div");m.className=`modal ${cls}`.trim();m.innerHTML=`<div class="modal-box"><div class="modal-head"><b>${esc(title)}</b><span class="spacer"></span><button class="btn">关闭 Esc</button></div><div class="modal-body">${body}</div></div>`;m.onclick=e=>{if(e.target===m||e.target.closest(".modal-head .btn"))m.remove()};document.body.append(m);return m; }
-function showWelcome(firstVisit=false){const m=modal("为什么有 NEWSDESK",`<section class="welcome-hero"><div class="welcome-kicker">PUBLIC INTELLIGENCE, WITH RECEIPTS</div><h2>只看真新闻。</h2><p>我们并不缺信息，而是被虚假内容、奶头乐，以及伪装成新闻的营销信息淹没。NEWSDESK 的初心，是把注意力还给真正发生、值得理解、能够追溯原始证据的事情。</p><p>这里的“真”不是替你宣布绝对真相，而是明确回答：谁最先说、是否有独立媒体印证、哪些只是机构声明、证据哪里冲突，以及如何回到原始新闻自行核对。</p></section><div class="welcome-difference"><div><b>01</b><strong>来源不混算</strong><span>官方、独立采编、聚合与社区线索分层；同一媒体集团多篇不冒充多源印证。</span></div><div><b>02</b><strong>结论可追溯</strong><span>可信度不是“真假概率”。每条断言绑定来源、原句和支持/反驳关系。</span></div><div><b>03</b><strong>面向中文决策者</strong><span>把中文政策语境与全球 AI、科技、宏观和市场信号放进同一事件流。</span></div></div><h5>第一次使用，只记住三点</h5><div class="onboarding-steps"><button data-tour="news"><b>1</b><span><strong>点开一条新闻</strong>查看来源结构、可信度依据与主要内容。</span></button><button data-tour="topic"><b>2</b><span><strong>左侧选择主题</strong>在科技、经济、政策、民生等领域间切换。</span></button><button data-tour="original"><b>3</b><span><strong>找“阅读原始新闻”</strong>详情顶部的大按钮会直达原始媒体页面。</span></button></div><h5>键盘快捷键（可以先跳过）</h5><div class="keys"><div>命令面板 <kbd>Ctrl K</kbd></div><div>公共全景 / 为我推荐 <kbd>g a / g p</kbd></div><div>值得看 / 待证 / 噪音 <kbd>1 / 2 / 3</kbd></div><div>上下选择事件 <kbd>j / k</kbd></div><div>打开原始新闻 <kbd>o</kbd></div><div>搜索 <kbd>/</kbd></div><div>AI 雷达 <kbd>i</kbd></div><div>人物动向 <kbd>m</kbd></div><div>研究工作台 <kbd>e</kbd></div><div>信源 / 质量 <kbd>s / q</kbd></div><div>监控 / 观察列表 <kbd>a / w</kbd></div><div>简报 <kbd>d</kbd></div><div>刷新数据 <kbd>r</kbd></div><div>关闭弹层 / 详情 <kbd>Esc</kbd></div></div><div class="welcome-foot"><span>公开来源 · 本地优先 · 非交易终端</span><button class="btn welcome-start">开始浏览</button></div>`,"welcome-modal");m.querySelector(".welcome-start").onclick=()=>m.remove();m.querySelectorAll("[data-tour]").forEach(b=>b.onclick=()=>{m.remove();const target=b.dataset.tour==="topic"?$("#topics"):b.dataset.tour==="news"?$("#rows"):$("#detail");target?.classList.add("tour-focus");target?.scrollIntoView({behavior:"smooth",block:"center"});setTimeout(()=>target?.classList.remove("tour-focus"),2200)});if(firstVisit)localStorage.setItem("newsdeskWelcomeSeen","1")}
-// 信源面板从『健康表』升级为『治理台』：健康只答『抓得到吗』，治理还要答
-// 『这个源值不值得留、要不要重点关注』。两者一起看，才分得清运维问题和编辑问题。
-async function showSources(){
-  const [d,rv]=await Promise.all([api("/api/sources"),api("/api/source-review").catch(()=>null)]);
-  const vl={healthy:"健康",degraded:"降级",unhealthy:"解析异常",down:"不可达",disabled:"停用",unseen:"未检查"};
-  const cards=Object.fromEntries((rv?.cards||[]).map(c=>[c.source_id,c]));
-  const c=rv?.concentration;
-  const under=Object.entries(rv?.lang_relevance||{}).filter(([,v])=>v.under_served).map(([k])=>k);
-  const caveats=Object.fromEntries((rv?.proposed_changes||[]).filter(p=>p.caveat).map(p=>[p.source_id,p.caveat]));
-  const head=rv?`<div class="src-summary"><b>${rv.n_sources}</b> 个信源 · 启用 <b>${rv.enabled}</b> · 窗口内有产出 <b>${rv.producing}</b>
-    <div class="note">产出集中度：第一名 ${esc(c.top_source.source_id||"—")} 占 ${(100*(c.top_source.share||0)).toFixed(1)}%，前三占 ${(100*c.top3_share).toFixed(1)}%，最大集团 ${esc(c.top_group.group)} 占 ${(100*c.top_group.share).toFixed(1)}%，HHI ${c.hhi}。集中度越高，整个终端越接近单一口径。</div>
-    ${rv.proposed_changes.length?`<div class="note">有 <b>${rv.proposed_changes.length}</b> 个源的实际表现与当前分档不一致；分档改动需人工确认后改 sources.json 的 focus 字段。</div>`:""}
-    ${under.length?`<div class="note">⚠ 相关度偏低语种：<b>${under.map(esc).join(" / ")}</b> —— 关注画像目前只有中英文词表，这些语种分数低先记在我方账上，别拿我们的欠工去降别人的档。</div>`:""}
-    ${rv.dormant_enabled.length?`<div class="note">有 <b>${rv.dormant_enabled.length}</b> 个源已启用但零产出 —— 先分清是源停更还是本机抓不到，再决定去留。</div>`:""}</div>`:"";
-  const sorted=[...d.sources].sort((a,b)=>(cards[b.id]?.score??-1)-(cards[a.id]?.score??-1));
-  modal("信源治理台",head+`<table><thead><tr><th>评分</th><th>分档</th><th>裁决</th><th>层级</th><th>信源</th><th>角色</th><th>窗口条数</th><th>首发</th><th>被印证</th><th>存疑均值</th><th>说明</th></tr></thead><tbody>${sorted.map(s=>{const k=cards[s.id];const mismatch=k&&k.grade!==k.focus&&k.grade!=="dormant";return `<tr class="${s.enabled?"":"off"}"><td>${k?k.score.toFixed(3):"—"}</td><td class="${mismatch?"err":""}">${k?esc(gradeLabels[k.grade]||k.grade):"—"}${mismatch?`（当前 ${esc(gradeLabels[k.focus]||k.focus)}）`:""}</td><td class="${s.ok?"ok":"err"}">${vl[s.verdict]||esc(s.verdict)}</td><td>T${s.tier}</td><td><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.name)}</a></td><td>${esc(s.source_role)}</td><td>${k?k.n_items:0}</td><td>${na(k,"lead",k?.n_lead)}</td><td>${na(k,"corroborated",k?.n_corroborated)}</td><td>${k?k.avg_doubt.toFixed(1):"—"}</td><td class="note">${esc(s.last_error||s.note||"")}${caveats[s.id]?`<div class="err">⚠ ${esc(caveats[s.id])}</div>`:""}</td></tr>`}).join("")}</tbody></table>
-  <div class="note">评分 = 供稿 20% + 首发 20% + 被印证 15% + 相关 20% + 净度 15% + 低存疑 10%。供稿项按 log 压缩且 20 条封顶：一个源刷 500 条不会因为量大就被评成重要源，否则治理结论会变成『谁刷得多谁重要』，而集中度过高本身就是要治的毛病。</div>
-  <div class="note">首发只在有别的集团也在报的事件里算数（没人跟不等于抢到独家）。一次源（官方声明、监管披露）的首发与被印证两项标为「—」：它自己就是当事人，无从抢首发，也不需要别人证明他是否这么说了 —— 这两项不参与它的加权，权重按比例摊到其余项。窗口内产出不足 ${rv?.min_items_for_core??"—"} 条的源不定档，样本太少时各项比率都是噪音。</div>`)}
-
-// 一次源的不适用项显示为「—」，而不是 0 —— 0 会被读成「它在这项上得了零分」。
-function na(card,dim,value){
-  if(!card) return 0;
-  return card.not_applicable?.includes(dim)
-    ? `<span class="na" title="此项对一次源不适用，不参与加权">—</span>` : value;
-}
+function showWelcome(firstVisit=false){const m=modal("为什么有 NEWSDESK",`<section class="welcome-hero"><div class="welcome-kicker">PUBLIC INTELLIGENCE, WITH RECEIPTS</div><h2>只看真新闻。</h2><p>我们并不缺信息，而是被虚假内容、奶头乐，以及伪装成新闻的营销信息淹没。NEWSDESK 的初心，是把注意力还给真正发生、值得理解、能够追溯原始证据的事情。</p><p>这里的“真”不是替你宣布绝对真相，而是明确回答：谁最先说、是否有独立媒体印证、哪些只是机构声明、证据哪里冲突，以及如何回到原始新闻自行核对。</p></section><div class="welcome-difference"><div><b>01</b><strong>来源不混算</strong><span>官方、独立采编、聚合与社区线索分层；同一媒体集团多篇不冒充多源印证。</span></div><div><b>02</b><strong>结论可追溯</strong><span>可信度不是“真假概率”。每条断言绑定来源、原句和支持/反驳关系。</span></div><div><b>03</b><strong>面向中文决策者</strong><span>把中文政策语境与全球 AI、科技、宏观和市场信号放进同一事件流。</span></div></div><h5>第一次使用，只记住三点</h5><div class="onboarding-steps"><button data-tour="news"><b>1</b><span><strong>点开一条新闻</strong>查看来源结构、可信度依据与主要内容。</span></button><button data-tour="topic"><b>2</b><span><strong>左侧选择主题</strong>在科技、经济、政策、民生等领域间切换。</span></button><button data-tour="original"><b>3</b><span><strong>找“阅读原始新闻”</strong>详情顶部的大按钮会直达原始媒体页面。</span></button></div><h5>键盘快捷键（可以先跳过）</h5><div class="keys"><div>命令面板 <kbd>Ctrl K</kbd></div><div>公共全景 / 为我推荐 <kbd>g a / g p</kbd></div><div>值得看 / 待证 / 噪音 <kbd>1 / 2 / 3</kbd></div><div>上下选择事件 <kbd>j / k</kbd></div><div>打开原始新闻 <kbd>o</kbd></div><div>搜索 <kbd>/</kbd></div><div>AI 雷达 <kbd>i</kbd></div><div>质量门禁 <kbd>q</kbd></div><div>观察列表 <kbd>w</kbd></div><div>简报 <kbd>d</kbd></div><div>关闭弹层 / 详情 <kbd>Esc</kbd></div></div><div class="welcome-foot"><span>公开来源 · 本地优先 · 非交易终端</span><button class="btn welcome-start">开始浏览</button></div>`,"welcome-modal");m.querySelector(".welcome-start").onclick=()=>m.remove();m.querySelectorAll("[data-tour]").forEach(b=>b.onclick=()=>{m.remove();const target=b.dataset.tour==="topic"?$("#topics"):b.dataset.tour==="news"?$("#rows"):$("#detail");target?.classList.add("tour-focus");target?.scrollIntoView({behavior:"smooth",block:"center"});setTimeout(()=>target?.classList.remove("tour-focus"),2200)});if(firstVisit)localStorage.setItem("newsdeskWelcomeSeen","1")}
 async function showQuality(){const d=await api("/api/quality"),labels={pass:"通过",warn:"待提升",fail:"失败"};modal("质量门禁与产品边界",`<div class="quality-summary"><b>${d.status==="healthy"?"全部通过":d.status==="healthy_with_warnings"?"硬性门禁通过，仍有待提升项":"存在硬性失败"}</b><span>${d.counts.pass} 通过 · ${d.counts.warn} 待提升 · ${d.counts.fail} 失败</span></div><div class="quality-gates">${d.gates.map(g=>`<div class="quality-gate ${g.status}"><span>${labels[g.status]}</span><b>${esc(g.name)}</b><code>${esc(g.value)} / ${esc(g.target)}</code><em>${esc(g.detail||"")}</em></div>`).join("")}</div><h5>明确边界</h5>${d.boundaries.map(x=>`<div class="note">• ${esc(x)}</div>`).join("")}`)}
 async function showAIRadar(){const d=await api("/api/ai-radar?hours=72"),evLabel={independent:"独立印证",primary:"一次发布",single:"单源报道"};modal("AI / 科技情报雷达",`<div class="radar-summary"><div><b>${d.clusters}</b><span>72H AI事件</span></div><div><b>${d.official_clusters}</b><span>一次信源</span></div><div><b>${d.reporting_clusters}</b><span>媒体跟进</span></div><div><b>${d.independently_corroborated}</b><span>独立印证</span></div></div><div class="note">${d.sources.enabled} 个 AI 专线信源：${d.sources.official} 个实验室/研究一次源，${d.sources.reporting} 个独立采编源。事件按“独立印证 → 一次发布 → 单源报道”排序；预印本和厂商公告不会自动视为独立确认。</div><h5>情报赛道</h5><div class="radar-topics">${Object.entries(d.topic_counts).map(([k,v])=>`<button class="chip" data-radar-topic="${esc(k)}">${esc(topicLabels[k]||k)} <em>${v}</em></button>`).join("")||"暂无事件"}</div><h5>高频实体</h5><div class="radar-entities">${d.top_entities.map(x=>`<button class="chip" data-radar-asset="${esc(x.symbol||x.id)}">${esc(x.symbol||x.name)} <em>${x.n}</em></button>`).join("")||"数据正在积累"}</div><h5>重要事件</h5><div class="radar-events">${d.items.slice(0,15).map(x=>`<button data-radar-headline="${esc(x.headline)}"><span>${esc(evLabel[x.evidence_status]||x.evidence_status)} · ${esc(x.headline_src)} · ${Math.round(x.cred)}分</span><b>${esc(x.headline)}</b><em>${x.topics.filter(t=>t.startsWith("ai_")).map(t=>topicLabels[t]||t).join(" / ")}</em></button>`).join("")||'<div class="empty">刷新后将展示 AI 专线事件</div>'}</div>`);setTimeout(()=>{document.querySelectorAll("[data-radar-topic]").forEach(b=>b.onclick=()=>{document.querySelector(".modal")?.remove();state.topic=b.dataset.radarTopic;loadFeed()});document.querySelectorAll("[data-radar-asset]").forEach(b=>b.onclick=()=>{document.querySelector(".modal")?.remove();$("#q").value=`asset:${b.dataset.radarAsset}`;loadFeed()});document.querySelectorAll("[data-radar-headline]").forEach(b=>b.onclick=()=>{document.querySelector(".modal")?.remove();$("#q").value=`"${b.dataset.radarHeadline}"`;loadFeed()})},0)}
-function researchForm(){return '<div class="research-search"><input id="research-q" class="search" placeholder="例如：过去一周 AI 芯片有哪些重要进展？"><button class="btn" id="research-run">检索证据</button></div><div class="note">当前为抽取式研究：每条事实必须绑定原始标题或摘要原句，不让模型补写无引用结论。</div><div id="research-results"></div>'}
-async function runResearch(){const q=$("#research-q").value.trim(),box=$("#research-results");if(q.length<2){box.innerHTML='<div class="note">请输入至少两个字符。</div>';return}box.innerHTML='<div class="note">正在检索 claim 证据库…</div>';const d=await api("/api/research?q="+encodeURIComponent(q)+"&limit=10"),labels={independently_reported:"独立印证",official_statement:"机构声明",single_report:"单源待证",disputed:"存在反向证据"},rels={support:"支持",refute:"反驳",unknown:"待判定"};if(!d.findings.length){box.innerHTML='<div class="empty">没有找到足够接近且带原始引文的结论。请换用公司、模型或技术关键词。</div>';return}box.innerHTML='<div class="research-summary">'+d.findings.length+' 条可引用结论 · 引用覆盖率 '+Math.round(d.citation_coverage*100)+'%</div>'+d.findings.map((x,i)=>'<article class="research-finding"><div class="research-number">'+String(i+1).padStart(2,"0")+'</div><div><span class="claim-status '+esc(x.status)+'">'+esc(labels[x.status]||x.status)+'</span><p>'+esc(x.sentence)+'</p><div class="research-cites">'+x.citations.map((c,j)=>'<a href="'+esc(c.url)+'" target="_blank" rel="noopener noreferrer"><b><span class="claim-relation '+esc(c.relation||"support")+'">'+esc(rels[c.relation||"support"])+'</span>['+(j+1)+'] '+esc(c.source)+'</b><q>'+esc(c.quote)+'</q><small>'+esc(c.quote_field)+' '+c.quote_start+'–'+c.quote_end+' · '+esc(c.quote_hash)+'</small></a>').join("")+'</div></div></article>').join("")+'<div class="research-limits">'+d.limitations.map(x=>'<div>• '+esc(x)+'</div>').join("")+'</div>'}
-function showResearch(){modal("引用研究工作台",researchForm());setTimeout(()=>{$("#research-run").onclick=runResearch;$("#research-q").onkeydown=e=>{if(e.key==="Enter")runResearch()};$("#research-q").focus()},0)}
 const DG_KIND={summary:"发生了什么",so_what:"对你意味着",red:"⚑ 可疑点",verify:"自己核实",pos:"正向信号",neg:"风险信号"};
 function dgEvent(c){const meta=[`${c.n_groups} 个独立信源`,`${c.n_items} 篇报道`,esc(c.src),c.ts].map(x=>`<span>${x}</span>`).join("");
   const pts=(c.points||[]).map(p=>`<div class="dg-pt dg-${p.kind}"><b>${esc(DG_KIND[p.kind]||p.label)}</b><span>${esc(p.text)}</span></div>`).join("");
@@ -367,7 +370,6 @@ function dgEvent(c){const meta=[`${c.n_groups} 个独立信源`,`${c.n_items} �
     ${c.url?`<a class="dg-orig" href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">阅读原始新闻 ↗</a>`:""}</div></article>`;}
 async function showDigest(){
   const d=await api("/api/digest?format=json");
-  const admin=document.body.classList.contains("admin");
   const sec=(n,title,sub,inner)=>`<section class="dg-sec"><h4><span class="dg-n">${n}</span>${title}${sub?`<em>${esc(sub)}</em>`:""}</h4>${inner}</section>`;
   const signal=d.signal.length?d.signal.map(dgEvent).join(""):`<div class="note">本窗口内没有同时满足可信度与相关性门槛的事件。</div>`;
   const unv=d.unverified.length?d.unverified.map(dgEvent).join(""):`<div class="note">无。</div>`;
@@ -375,37 +377,30 @@ async function showDigest(){
   const okN=d.health.filter(h=>h.ok).length,totN=d.health.length;
   const hero=`<div class="dg-hero"><div class="dg-hero-top"><span class="dg-win">近 ${d.window_hours} 小时 · 为你精选</span><span class="dg-profile">${esc(d.profile||"")}</span></div>
     <div class="dg-stats"><div class="dg-stat"><b>${d.counts.events}</b><span>抓取事件</span></div><div class="dg-stat ok"><b>${d.counts.signal}</b><span>值得看</span></div><div class="dg-stat mute"><b>${d.counts.noise}</b><span>过滤噪音</span></div><div class="dg-stat"><b>${okN}/${totN}</b><span>信源在线</span></div></div></div>`;
-  let body=hero
+  const body=hero
     +sec("①","值得你看的","可信度 × 相关性 排序",signal)
     +sec("②","单源待证","只有一家在说，别急着当事实",unv)
     +sec("③","被过滤的噪音","抽样",noise);
-  if(admin){
-    const health=`<table class="dg-health"><thead><tr><th>信源</th><th>层级</th><th>状态</th><th>条数</th><th>延迟</th></tr></thead><tbody>${d.health.map(h=>`<tr class="${h.ok?"":"bad"}"><td>${esc(h.name)}</td><td>T${h.tier}</td><td>${h.ok?"✅":"❌ "+esc(h.err||"")}</td><td>${h.items}</td><td>${h.ms}ms</td></tr>`).join("")}</tbody></table>`;
-    body+=sec("④","信源健康","仅管理模式可见",health);
-  }
   modal(`每日简报 · ${esc(d.generated_at)}`,body,"digest-modal");}
-async function loadAlertBadge(){try{const d=await api("/api/alert-events?unread=1&limit=100");const b=$("#alert-badge");b.textContent=d.unread;b.hidden=!d.unread}catch(_){}}
-async function showAlerts(){const [d,ev]=await Promise.all([api("/api/alerts"),api("/api/alert-events?limit=30")]);modal("事件监控",`<div class="alert-create"><input id="alert-name" class="search" placeholder="规则名称"><button class="btn" id="save-alert">保存当前筛选</button></div><div class="note">规则按当前搜索词、主题、语言和证据门槛捕获刷新后出现的新事件。</div>${ev.events.length?`<h5>最近命中 <button class="btn" id="alerts-read">全部已读</button></h5><div class="alert-events">${ev.events.map(x=>`<button class="alert-event ${x.read_ts?"read":""}" data-headline="${esc(x.headline)}"><span>${esc(x.alert_name)}</span><b>${esc(x.headline)}</b><em>${Math.round(x.cred)}分 · ${time(x.event_ts)}</em></button>`).join("")}</div>`:""}<h5>监控规则</h5><div class="alert-list">${d.alerts.length?d.alerts.map(a=>`<div class="alert-row"><div><b>${esc(a.name)}</b><span>${esc(a.q||"全部关键词")} · ${esc(a.topic)} · ${esc(a.lang)} · ≥${a.min_cred}</span></div><strong>${a.match_count_24h}</strong><button class="btn alert-delete" data-id="${a.id}">删除</button></div>`).join(""):`<div class="empty">尚无监控规则</div>`}</div>`);setTimeout(()=>{$("#save-alert").onclick=async()=>{const name=$("#alert-name").value.trim();if(!name)return toast("请输入规则名称");await api("/api/alerts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,q:$("#q").value.trim(),topic:state.topic,lang:state.lang,min_cred:state.minCred})});document.querySelector(".modal")?.remove();showAlerts()};$("#alerts-read")&&($("#alerts-read").onclick=async()=>{await api("/api/alert-events/read",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});document.querySelector(".modal")?.remove();loadAlertBadge();showAlerts()});document.querySelectorAll(".alert-event").forEach(b=>b.onclick=()=>{document.querySelector(".modal")?.remove();$("#q").value=b.dataset.headline;loadFeed()});document.querySelectorAll(".alert-delete").forEach(b=>b.onclick=async()=>{await api(`/api/alerts/${b.dataset.id}`,{method:"DELETE"});document.querySelector(".modal")?.remove();showAlerts()})},0)}
 function sparkline(points){if(points.length<2)return '<div class="note">历史数据正在积累；至少需要两个快照。</div>';const vals=points.map(x=>x.price),lo=Math.min(...vals),hi=Math.max(...vals),span=hi-lo||1,path=vals.map((v,i)=>`${i?"L":"M"}${(i/(vals.length-1)*520).toFixed(1)},${(90-(v-lo)/span*75).toFixed(1)}`).join(" ");return `<svg class="spark" viewBox="0 0 520 100" preserveAspectRatio="none"><path d="${path}"/></svg><div class="chart-range">${Number(lo).toFixed(4)} — ${Number(hi).toFixed(4)} · ${points.length} 个快照</div>`}
-async function showMarket(symbol){const [m,h,w]=await Promise.all([api("/api/markets"),api(`/api/markets/history/${encodeURIComponent(symbol)}?hours=168`),api("/api/watchlist")]);const x=m.instruments.find(v=>v.symbol===symbol),watched=w.items.some(v=>v.symbol===symbol);if(!x)return toast("资产暂不可用");modal(`${x.name} · ${symbol}`,`<div class="market-detail"><div class="bigscore"><b>${Number(x.price).toLocaleString("zh-CN",{maximumFractionDigits:4})}</b><span>${esc(x.currency)} · ${esc(x.asset)} · 延迟数据</span></div>${sparkline(h.points)}<div class="note">来源：${esc(x.source)}。仅供新闻背景参考，不可用于交易执行。</div><button class="btn" id="toggle-watch">${watched?"移出观察列表":"加入观察列表"}</button><button class="btn" id="asset-news">查看相关新闻</button></div>`);setTimeout(()=>{$("#toggle-watch").onclick=async()=>{await api(`/api/watchlist${watched?`/${encodeURIComponent(symbol)}`:""}`,watched?{method:"DELETE"}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({symbol})});document.querySelector(".modal")?.remove();showMarket(symbol)};$("#asset-news").onclick=()=>{document.querySelector(".modal")?.remove();$("#q").value=`asset:${symbol}`;loadFeed()}},0)}
+async function showMarket(symbol){const [m,h,w]=await Promise.all([api("/api/markets"),api(`/api/markets/history/${encodeURIComponent(symbol)}?hours=168`),api("/api/watchlist")]);const x=m.instruments.find(v=>v.symbol===symbol),watched=w.items.some(v=>v.symbol===symbol);if(!x)return toast("资产暂不可用");modal(`${x.name} · ${symbol}`,`<div class="market-detail"><div class="bigscore"><b>${Number(x.price).toLocaleString("zh-CN",{maximumFractionDigits:4})}</b><span>${esc(x.currency)} · ${esc(x.asset)} · 延迟数据</span></div>${sparkline(h.points)}<div class="note">来源：${esc(x.source)}。仅供新闻背景参考，不可用于交易执行。</div><button class="btn" id="toggle-watch">${watched?"移出观察列表":"加入观察列表"}</button><button class="btn" id="asset-news">查看相关新闻</button></div>`);setTimeout(()=>{$("#toggle-watch").onclick=async()=>{try{await api(`/api/watchlist${watched?`/${encodeURIComponent(symbol)}`:""}`,watched?{method:"DELETE"}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({symbol})});document.querySelector(".modal")?.remove();showMarket(symbol)}catch(e){toast(String(e.message).startsWith("401")?"观察列表由管理员在管理后台维护":`操作失败：${e.message}`)}};$("#asset-news").onclick=()=>{document.querySelector(".modal")?.remove();$("#q").value=`asset:${symbol}`;loadFeed()}},0)}
 async function showWatchlist(){const d=await api("/api/watchlist");modal("资产观察列表",d.items.length?`<div class="watch-grid">${d.items.map(x=>x.market?`<button class="watch-card" data-watch="${esc(x.symbol)}"><b>${esc(x.market.name)}</b><strong>${Number(x.market.price).toLocaleString("zh-CN",{maximumFractionDigits:4})}</strong><span>${esc(x.symbol)} · ${esc(x.market.asset)}</span></button>`:`<div class="watch-card"><b>${esc(x.symbol)}</b><span>当前无报价</span></div>`).join("")}</div>`:`<div class="empty">尚未添加资产；点击顶部行情即可加入。</div>`);setTimeout(()=>document.querySelectorAll("[data-watch]").forEach(b=>b.onclick=()=>{document.querySelector(".modal")?.remove();showMarket(b.dataset.watch)}),0)}
 function help(){showWelcome(false)}
-async function refresh(){const b=$("#btn-refresh");b.classList.add("busy");try{await api("/api/refresh",{method:"POST"});toast("刷新任务已启动");const t=setInterval(async()=>{const s=await api("/api/refresh_status");if(!s.running){clearInterval(t);b.classList.remove("busy");await Promise.all([loadStats(),loadFeed()]);toast(s.error?`刷新失败：${s.error}`:"刷新完成");}},1200)}catch(e){b.classList.remove("busy");toast(e.message)}}
 
 document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{state.view=b.dataset.view;document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x===b));loadFeed()});
 $("#mc").oninput=e=>{$("#mc-val").textContent=e.target.value;state.minCred=+e.target.value;loadFeed()};
 let qt;$("#q").oninput=()=>{clearTimeout(qt);qt=setTimeout(loadFeed,250)};
-$("#btn-about").onclick=()=>showWelcome(false);$("#btn-changelog").onclick=()=>showChangelog();$("#btn-sources").onclick=showSources;$("#btn-ai-radar").onclick=showAIRadar;$("#btn-research").onclick=showResearch;$("#btn-quality").onclick=showQuality;$("#btn-digest").onclick=showDigest;$("#btn-alerts").onclick=showAlerts;$("#btn-watchlist").onclick=showWatchlist;$("#btn-help").onclick=help;$("#btn-refresh").onclick=refresh;$("#btn-command").onclick=openCommands;$("#btn-lang").onclick=toggleDisp;$("#btn-lock").onclick=toggleAdmin;const _bs=$("#btn-senior");if(_bs)_bs.onclick=toggleSenior;
+$("#btn-about").onclick=()=>showWelcome(false);$("#btn-ai-radar").onclick=showAIRadar;$("#btn-digest").onclick=showDigest;$("#btn-help").onclick=help;$("#btn-command").onclick=openCommands;$("#btn-lang").onclick=toggleDisp;const _bs=$("#btn-senior");if(_bs)_bs.onclick=toggleSenior;
+// 老人版工具条：字号三档 + 一键回标准版。老人版里顶栏那排小按钮不好点，控制项收在这。
+$("#sr-font-dn").onclick=()=>bumpSrSize(-1);$("#sr-font-up").onclick=()=>bumpSrSize(1);$("#sr-exit").onclick=toggleSenior;
 document.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
 $("#command-palette").onclick=e=>{if(e.target===$("#command-palette"))closeCommands()};
 $("#command-q").oninput=()=>{commandIndex=0;renderCommands()};
 $("#command-q").onkeydown=e=>{const shown=[...document.querySelectorAll("[data-command]")];if(e.key==="ArrowDown"){e.preventDefault();commandIndex=Math.min(shown.length-1,commandIndex+1);renderCommands()}if(e.key==="ArrowUp"){e.preventDefault();commandIndex=Math.max(0,commandIndex-1);renderCommands()}if(e.key==="Enter"){e.preventDefault();shown[commandIndex]?.click()}if(e.key==="Escape"){e.preventDefault();closeCommands()}};
 let gChord=0;
-document.onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();$("#command-palette").hidden?openCommands():closeCommands();return}if(!$("#command-palette").hidden)return;if(e.key==="Escape"){document.querySelector(".modal")?.remove();closeDetail();return}if(["INPUT","TEXTAREA"].includes(document.activeElement.tagName)){if(e.key==="Escape")document.activeElement.blur();return}const key=e.key.toLowerCase();if(key==="g"){gChord=Date.now();return}if(Date.now()-gChord<900&&(key==="a"||key==="p")){setMode(key==="a"?"public":"personal");gChord=0;return}gChord=0;if("123".includes(e.key))document.querySelectorAll(".tab")[+e.key-1]?.click();if(e.key==="/"){e.preventDefault();$("#q").focus()}if(e.key==="j")select(Math.min(state.items.length-1,state.selected+1));if(e.key==="k")select(Math.max(0,state.selected-1));if(e.key==="o"&&state.selected>=0)window.open(state.items[state.selected].url,"_blank","noopener");if(e.key==="a")showAlerts();if(e.key==="w")showWatchlist();if(e.key==="q")showQuality();if(e.key==="i")showAIRadar();if(e.key==="m")location.href="/movements.html";if(e.key==="e")showResearch();if(e.key==="r")refresh();if(e.key==="s")showSources();if(e.key==="d")showDigest();if(e.key==="n")showChangelog()};
+document.onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();$("#command-palette").hidden?openCommands():closeCommands();return}if(!$("#command-palette").hidden)return;if(e.key==="Escape"){document.querySelector(".modal")?.remove();closeDetail();return}if(["INPUT","TEXTAREA"].includes(document.activeElement.tagName)){if(e.key==="Escape")document.activeElement.blur();return}const key=e.key.toLowerCase();if(key==="g"){gChord=Date.now();return}if(Date.now()-gChord<900&&(key==="a"||key==="p")){setMode(key==="a"?"public":"personal");gChord=0;return}gChord=0;if("123".includes(e.key))document.querySelectorAll(".tab")[+e.key-1]?.click();if(e.key==="/"){e.preventDefault();$("#q").focus()}if(e.key==="j")select(Math.min(state.items.length-1,state.selected+1));if(e.key==="k")select(Math.max(0,state.selected-1));if(e.key==="o"&&state.selected>=0)window.open(state.items[state.selected].url,"_blank","noopener");if(e.key==="w")showWatchlist();if(e.key==="q")showQuality();if(e.key==="i")showAIRadar();if(e.key==="d")showDigest()};
 setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString("zh-CN",{hour12:false}),1000);
-async function loadChangelog(){try{const entries=await api("/api/changelog");if(!entries.length)return;const latest=entries[0];const seen=localStorage.getItem("newsdeskChangelogSeen");if(seen!==latest.version){const banner=document.createElement("div");banner.className="changelog-banner";banner.innerHTML=`<span>🆕 <b>v${esc(latest.version)}</b> ${esc(latest.title)}</span><button class="btn changelog-view">查看更新</button><button class="btn changelog-dismiss">✕</button>`;document.body.prepend(banner);banner.querySelector(".changelog-view").onclick=()=>{banner.remove();showChangelog(entries);localStorage.setItem("newsdeskChangelogSeen",latest.version)};banner.querySelector(".changelog-dismiss").onclick=()=>{banner.remove();localStorage.setItem("newsdeskChangelogSeen",latest.version)}}window._changelogData=entries}catch(_){}}
-function showChangelog(entries){entries=entries||window._changelogData||[];if(!entries.length)return toast("暂无更新日志");modal("版本更新记录",`<div class="changelog">${entries.map(e=>`<div class="changelog-entry"><div class="changelog-head"><b>v${esc(e.version)}</b><span>${esc(e.date)}</span><em>${esc(e.title)}</em></div><ul>${e.changes.map(c=>`<li>${esc(c)}</li>`).join("")}</ul></div>`).join("")}</div>`)}
-initFilters(); syncDispBtn(); applySenior(); ttsInit(); applyAdmin(); setMode("personal"); loadStats().catch(e=>toast(`加载失败：${e.message}`)); loadMarkets();if(isAdmin()){loadAlertBadge(); loadChangelog(); setInterval(loadAlertBadge,60000);}
+initFilters(); syncDispBtn(); applySenior(); ttsInit(); setMode("personal"); loadStats().catch(e=>toast(`加载失败：${e.message}`)); loadMarkets();
 // 首次访问：先弹「为什么有 NEWSDESK」，关掉后再轻问一句要不要老人版（避免两个弹窗叠加）；
 // 老访客直接问一次（askSenior 自带 flag，问过一次不再打扰）。
 if(!localStorage.getItem("newsdeskWelcomeSeen")){const _wm=showWelcome(true);const _obs=new MutationObserver(()=>{if(!document.body.contains(_wm)){_obs.disconnect();setTimeout(askSenior,450);}});_obs.observe(document.body,{childList:true});}else{setTimeout(askSenior,450);}

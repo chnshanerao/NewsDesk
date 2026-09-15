@@ -13,33 +13,31 @@
     <b>NEWSDESK</b>
     <span class="brand-copy"><strong>只看真新闻</strong><small>在虚假、奶头乐与营销伪装中，把注意力还给可验证的重要事实。</small></span>
   </button>
-  <a class="movement-entry admin-only" href="/movements.html" title="查看人物的可验证资本与组织行动"><small>试运行</small>大佬动向</a>
   <div class="tabs">
     <button class="tab on" data-view="signal">值得看<kbd>1</kbd></button>
     <button class="tab" data-view="unverified">待证<kbd>2</kbd></button>
     <button class="tab" data-view="noise">噪音<kbd>3</kbd></button>
   </div>
-  <div class="mode-switch admin-only" role="group" aria-label="新闻浏览模式">
-    <button class="mode-btn" data-mode="public" title="不使用个人相关性门槛">公共全景</button>
-    <button class="mode-btn on" data-mode="personal" title="按当前个人画像筛选">为我推荐</button>
-  </div>
   <input id="q" class="search" placeholder="搜索新闻…支持 主题、语言、来源  /" autocomplete="off">
   <div class="spacer"></div>
   <button class="btn ai-radar-btn" id="btn-ai-radar">AI 雷达 <kbd>i</kbd></button>
   <button class="btn" id="btn-digest">简报 <kbd>d</kbd></button>
-  <button class="btn" id="btn-senior" title="老人版：浅色高对比、大字、可朗读">👓 老人版</button>
+  <button class="btn" id="btn-senior" title="老人版：大字、浅色护眼、可朗读">👓 老人版</button>
   <button class="btn" id="btn-lang" title="中文 / 原文">🌐 中文</button>
   <button class="btn" id="btn-help" title="三步上手与快捷键">上手 <kbd>?</kbd></button>
-  <button class="btn admin-only" id="btn-sources">信源 <kbd>s</kbd></button>
-  <button class="btn research-btn admin-only" id="btn-research">研究 <kbd>e</kbd></button>
-  <button class="btn admin-only" id="btn-quality">质量 <kbd>q</kbd></button>
-  <button class="btn admin-only" id="btn-alerts">监控 <span class="alert-badge" id="alert-badge" hidden>0</span> <kbd>a</kbd></button>
-  <button class="btn admin-only" id="btn-watchlist">观察列表 <kbd>w</kbd></button>
-  <button class="btn changelog-btn admin-only" id="btn-changelog" title="版本更新记录">更新 <kbd>n</kbd></button>
-  <button class="btn command-trigger admin-only" id="btn-command">命令 <kbd>Ctrl K</kbd></button>
-  <button class="btn admin-only" id="btn-refresh">刷新 <kbd>r</kbd></button>
-  <button class="btn lock-btn" id="btn-lock" title="管理模式（需令牌）">🔒</button>
+  <button class="btn command-trigger" id="btn-command">命令 <kbd>Ctrl K</kbd></button>
   <div class="clock" id="clock">--:--:--</div>
+</div>
+
+<!-- 老人版专属工具条：只在 body.senior 时显示。字号档位 + 一键回标准版。
+     标准版的密排顶栏对老人不友好，所以老人版把控制项收成三个大按钮。 -->
+<div class="sr-bar" id="sr-bar">
+  <span class="sr-bar-label">字号</span>
+  <button class="sr-chip" id="sr-font-dn" title="调小字号">A−</button>
+  <b class="sr-font-val" id="sr-font-val">大</b>
+  <button class="sr-chip" id="sr-font-up" title="调大字号">A＋</button>
+  <span class="spacer"></span>
+  <button class="sr-chip sr-chip-alt" id="sr-exit" title="回到标准版">回到标准版</button>
 </div>
 
 <div class="mode-banner" id="mode-banner"></div>
