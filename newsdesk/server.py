@@ -264,6 +264,10 @@ def make_handler(reg: dict, profile: dict, use_llm: bool):
             # 写操作照旧由 _write_authenticated 在服务端拦，前端 gate 只是界面分离。
             if p in ("/admin", "/admin.html", "/console"):
                 return self._static("admin.html")
+            # 机制与术语说明书：把「簇 / 跨脚本桥 / 错桥 / 印证率 / 新鲜度闸门」
+            # 这些内部口径一次讲清楚，对外可直接给链接，不用每次口述一遍。
+            if p in ("/explain", "/explain.html", "/docs"):
+                return self._static("explain.html")
             if p.startswith("/static/"):
                 return self._static(p[len("/static/"):])
             if p == "/favicon.ico":

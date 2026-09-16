@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NewsDesk 说明书 · 机制、原理与术语</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --line:#dfe3e8; --line2:#c3cad3;
+    --fg:#15181c; --dim:#4c5561; --dim2:#6b7482;
+    --blue:#0645ad; --amber:#8a4f00; --green:#0a6b12; --red:#a3121b;
+    --code:#eef1f5;
+    --serif:"Noto Serif SC","Source Han Serif SC","Songti SC",serif;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font:16px/1.8 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  .wrap{max-width:900px; margin:0 auto; padding:0 18px 80px}
+  header{background:#fff; border-bottom:3px solid var(--blue); margin-bottom:26px}
+  header .wrap{padding:26px 18px 22px}
+  h1{font-family:var(--serif); font-size:28px; line-height:1.4; margin:0 0 8px}
+  header p{margin:0; color:var(--dim); font-size:14px}
+  h2{
+    font-family:var(--serif); font-size:22px; line-height:1.5;
+    margin:44px 0 14px; padding-bottom:8px; border-bottom:2px solid var(--line2);
+  }
+  h3{font-size:17px; margin:28px 0 8px; color:var(--amber)}
+  h4{font-size:15px; margin:20px 0 6px}
+  p{margin:10px 0}
+  ul,ol{margin:10px 0; padding-left:22px}
+  li{margin:5px 0}
+  code{
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.9em;
+    background:var(--code); padding:1px 5px; border-radius:4px; word-break:break-all;
+  }
+  .box{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin:16px 0}
+  .tldr{border-left:5px solid var(--blue); background:#f4f8ff}
+  .warn{border-left:5px solid var(--amber); background:#fffaf1}
+  .bad{border-left:5px solid var(--red); background:#fff5f5}
+  .good{border-left:5px solid var(--green); background:#f4fbf5}
+  .term{background:var(--card); border:1px solid var(--line); border-left:4px solid var(--line2); border-radius:8px; padding:14px 16px; margin:14px 0}
+  .term>b{display:block; font-size:16px; color:var(--blue); margin-bottom:6px}
+  .term>b em{font-style:normal; color:var(--dim2); font-weight:400; font-size:13px; margin-left:6px}
+  .term dl{margin:0}
+  .term dt{float:left; clear:left; width:5.2em; color:var(--dim2); font-size:13px; font-weight:700; padding-top:2px}
+  .term dd{margin:0 0 6px 5.6em; font-size:14.5px}
+  .flow{display:grid; gap:8px; margin:16px 0}
+  .flow .step{display:grid; grid-template-columns:30px 1fr; gap:12px; align-items:start;
+              background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 14px}
+  .flow .n{width:30px; height:30px; border-radius:50%; background:var(--blue); color:#fff;
+           display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px}
+  .flow b{display:block; font-size:15.5px}
+  .flow span{display:block; font-size:14px; color:var(--dim)}
+  table{width:100%; border-collapse:collapse; margin:14px 0; font-size:14px; background:var(--card)}
+  th,td{border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top}
+  th{background:#eef1f5; font-size:13px}
+  .num{white-space:nowrap; font-family:ui-monospace,monospace}
+  .foot{margin-top:50px; padding-top:16px; border-top:1px solid var(--line2); font-size:13px; color:var(--dim2)}
+  @media (max-width:640px){
+    body{font-size:15.5px}
+    h1{font-size:23px} h2{font-size:20px; margin-top:36px}
+    .term dt{float:none; width:auto; padding-top:0}
+    .term dd{margin:0 0 8px}
+    table{font-size:13px} th,td{padding:6px 7px}
+    .wrap{padding:0 14px 60px}
+  }
+</style>
+</head>
+<body>
+
+<header><div class="wrap">
+  <h1>NewsDesk 说明书：它在解决什么问题、怎么解决、以及那些术语到底指什么</h1>
+  <p>本文解释项目汇报里出现过的每一个专有名词（<code>pipeline_freshness_seconds</code>、「同一件事被拆成 13 个簇」、「含所有错桥」……），
+  并把它们放回各自所属的机制里讲。文中所有数字都来自实测或线上实时读数，标注了口径。</p>
+</div></header>
+
+<div class="wrap">
+
+<div class="box tldr">
+  <b>先给一句话</b>
+  <p style="margin-bottom:0">NewsDesk 不是新闻聚合器。聚合器解决「看得多」，它解决的是<b>「能不能信」</b>：
+  把 140 个信源里讲同一件事的稿子归并成一个「事件」，然后用可复现的规则算出<b>有几家真正独立的媒体各自报过它</b>，
+  把这个结论直接印在标题旁边。所有新闻都展示，可疑的<b>只标不藏</b>。</p>
+</div>
+
+<h2>一、设计理念：三条不肯让的原则</h2>
+
+<h3>① 不删不藏，只标注</h3>
+<p>做「可信度」的系统最容易走上一条歪路：把低分的过滤掉。我们不这么做——<b>低分新闻照样展示，只是旁边写清楚为什么低</b>。
+理由很实在：删掉就等于替用户做了判断，而判断依据（词表、权重）一定会有错；
+错误的过滤是不可见的，错误的标注是可见、可反驳的。所以页面上永远是「全部新闻 + 标注」，不是「筛过的新闻」。</p>
+
+<h3>② 每一分都要能解释</h3>
+<p>可信度评分是<b>规则层</b>算的，不是丢给大模型打分。四个维度、每个维度的权重、每一条加减分的原因（命中了哪个词、几家独立信源）
+都会原样带进页面，用户点开就能看到「为什么给它 82 分」。大模型在这套系统里只做翻译和辅助甄别，
+<b>不参与可信度定档</b>——因为它给的分不可复现，明天同一条稿子可能是另一个数。</p>
+
+<h3>③ 不确定就写出来，包括「这个目标做不到」</h3>
+<p>项目里有个指标叫 AI 新闻的交叉印证率，愿望值是 0.10，实测天花板是 0.032。
+处理方式不是把目标偷偷改成 0.03 装作达成了，而是把<b>愿望值、实测上限、真正的成因</b>三样都写进那道闸门的说明文字里，
+面板上谁都看得见。同理，「交易执行不适用」「这个语种是我方欠工，不是对方不行」这类边界都是产品里的固定文案。</p>
+
+<div class="box">
+  <b>还有几条工程铁律，贯穿全项目</b>
+  <ul style="margin-bottom:0">
+    <li><b>成本必须有硬闸。</b>任何按量计费的能力（翻译、语音合成）都配了每日/每轮上限，撞上限就降级，不报错、不停服。</li>
+    <li><b>失败必须优雅降级。</b>翻译挂了显示原文；云端语音不可用就用浏览器本地语音；连本地语音都没有，就把朗读按钮整个隐藏——不给用户一个点了没反应的按钮。</li>
+    <li><b>负结果要留档。</b>试过、量过、没用的方案，把结论写进代码注释里，防止下一个人（包括三个月后的自己）再花一天重试一遍。</li>
+    <li><b>零第三方依赖。</b>后端纯 Python 标准库（<code>http.server</code> / <code>sqlite3</code> / <code>urllib</code>），前端纯原生 JS，没有 pip install、没有 npm。少一个依赖少一个供应链风险，也少一次「换机器跑不起来」。</li>
+  </ul>
+</div>
+
+<h2>二、一条新闻从进来到摆在你眼前，经过七道工序</h2>
+<p>整条流水线每 <b>15 分钟</b>自动跑一轮（<code>AUTO_REFRESH_SECONDS=900</code>），一轮目前约 <b>6 分钟</b>跑完。</p>
+
+<div class="flow">
+  <div class="step"><div class="n">1</div><div><b>抓取（fetch）</b><span>140 个启用信源（共 166 个，26 个停用观察中），5 个语种、8 个地区、120 个互相独立的所有者。RSS / HTML / JSON / SEC 申报四种解析器，6 个并发，逐源限速与超时。</span></div></div>
+  <div class="step"><div class="n">2</div><div><b>归一化（normalize）</b><span>统一时间戳、清洗标题、抽取实体与数字，算出两个「指纹」：字符二元组集合与 simhash。</span></div></div>
+  <div class="step"><div class="n">3</div><div><b>翻译（translate）</b><span>两层，用途完全不同：一层把外文标题译成英文供机器比对，一层把外文标题/正文译成中文供人阅读。</span></div></div>
+  <div class="step"><div class="n">4</div><div><b>聚类（cluster）</b><span>把讲同一件事的稿子并成一个「簇」。这一步决定了后面印证率算得准不准，是整条流水线技术含量最高的地方。</span></div></div>
+  <div class="step"><div class="n">5</div><div><b>可信度打分（credibility）</b><span>四维加权：信源权威 0.40 + 独立交叉印证 0.30 + 内容质量 0.20 + 时间一致性 0.10。另算一条独立的「存疑度」。</span></div></div>
+  <div class="step"><div class="n">6</div><div><b>排序（rank）</b><span>0.55 × 可信度 + 0.45 × 与你关注面的相关性，再乘一个 18 小时半衰期的时效衰减。</span></div></div>
+  <div class="step"><div class="n">7</div><div><b>展示（web）</b><span>标准版是三栏终端；老人版是单栏大字卡片 + 连读朗读。同一份数据，两套版式。</span></div></div>
+</div>
+
+<p>另外有一条与主线并行的<b>自检线</b>：每次请求 <code>/api/quality</code> 都会现场跑一遍 54 道质量闸门（当前 51 通过 / 3 提示 / 0 失败），
+从「信源健康率」到「备份多久没做过」全都在里面。它不是月报，是随时可查的体检单。</p>
+
+<h2>三、术语手册</h2>
+<p>按流水线分层。每个词四件事：<b>是什么 / 为什么需要 / 我们怎么做 / 坏掉时长什么样</b>。</p>
+
+<h3>3.1 信源层</h3>
+
+<div class="term"><b>tier（权威等级）<em>0 / 1 / 2 / 3</em></b><dl>
+<dt>是什么</dt><dd>给每个信源人工定的权威档位，数字越小越权威（一手机构、通讯社在 0–1 档，聚合站在 3 档）。</dd>
+<dt>为什么</dt><dd>「谁在说」是可信度里权重最大的一项（0.40）。没有分档，官方公报和聚合站抓来的二手稿会一样重。</dd>
+<dt>怎么做</dt><dd>写在 <code>sources.json</code> 里，每档一个权重系数；打分时取簇内最好的那一档。当前 140 个启用源：0 档 52 个、1 档 50 个、2 档 37 个、3 档 1 个。</dd>
+</dl></div>
+
+<div class="term"><b>source_role（编辑角色）<em>reporting / wire / official / aggregator / community</em></b><dl>
+<dt>是什么</dt><dd>这个源在生产链条上的位置：独立采编、通讯社、官方发布、聚合、社区。</dd>
+<dt>为什么</dt><dd>权威 ≠ 独立。政府公告非常权威，但它只能证明「该机构确实发布了这项声明」，<b>不能算作对内容的独立核实</b>。两者必须分开记。</dd>
+<dt>怎么做</dt><dd>交叉印证只数 <code>reporting</code> 和 <code>wire</code> 两类；官方/聚合/社区不计入印证家数，但官方稿会拿到一个 0.25 的印证「地板分」——它是源头，不该因为「只有一家」被打成孤证。</dd>
+</dl></div>
+
+<div class="term"><b>owner（所有者）与「独立集团」</b><dl>
+<dt>是什么</dt><dd>信源背后的实际控制方。人民网四个频道转同一条稿，<code>owner</code> 是同一个。</dd>
+<dt>为什么</dt><dd>这是印证率造假最常见的入口：抓 20 个同集团频道，任何一条稿都立刻「20 家报道」。</dd>
+<dt>怎么做</dt><dd>印证按 owner 去重后计数，不按稿件数。当前 140 个源归属 120 个互相独立的 owner。测试里甚至专门锁死了「不同通讯社不能共用 owner」。</dd>
+</dl></div>
+
+<h3>3.2 文本层（机器怎么读一句话）</h3>
+
+<div class="term"><b>字符二元组 / gram（bigram）</b><dl>
+<dt>是什么</dt><dd>把标题切成所有相邻两字的组合。「欧洲央行降息」→ 欧洲、洲央、央行、行降、降息。</dd>
+<dt>为什么</dt><dd>中文没有空格分词。用二元组可以在<b>不装任何分词库</b>的前提下比较两句话像不像——零依赖原则的直接产物。</dd>
+<dt>坏掉时</dt><dd>它天生跨不过语言：中文稿和英文稿永远没有共同二元组。这就是后面要有「跨脚本桥」的原因。</dd>
+</dl></div>
+
+<div class="term"><b>Jaccard 相似度</b><dl>
+<dt>是什么</dt><dd>两个集合的<b>交集大小 ÷ 并集大小</b>，取值 0–1。两句话共有的二元组越多、各自独有的越少，值越高。</dd>
+<dt>怎么做</dt><dd>主合并阈值 <code>0.42</code>。另有一条同脚本补召回规则用 <code>0.20</code>（下面「改写稿」那条会讲）。</dd>
+<dt>为什么是这两个数</dt><dd>不是拍的。在 72 小时真实语料上把够格的候选对<b>逐条人工看过</b>：0.20 这条路上够格的 61 对里，合并的 49 对有 48 对确为同一件事。再往高调就开始漏真事（0.28 只剩 22 对，0.35 只剩 13 对）。</dd>
+</dl></div>
+
+<div class="term"><b>simhash 与汉明距离</b><dl>
+<dt>是什么</dt><dd>把一整篇文本压成一个 64 位指纹，内容相近的文本指纹也相近。「汉明距离」= 两个指纹有几位不一样。</dd>
+<dt>为什么</dt><dd>Jaccard 要两两比集合，慢；simhash 比的是两个整数，快，适合先粗筛一遍。距离 ≤ <code>6</code> 视为高度相似。</dd>
+<dt>坏掉时</dt><dd>它对「改写过的同一件事」不敏感——换个说法指纹就散了。所以它只是快车道，不是唯一判据。</dd>
+</dl></div>
+
+<div class="term"><b>canonical_title（规范化标题）</b><dl>
+<dt>是什么</dt><dd>给非中英文的外文稿额外存一份英文译文，<b>专供机器比对</b>；用户看到的仍然是原文标题。</dd>
+<dt>为什么</dt><dd>法/德/葡语稿和英文稿之间既没有共同二元组，又都是拉丁字母（跨脚本桥不触发），于是它们完全孤立、永远参与不了印证。译成英文后两条通道就都打开了。</dd>
+<dt>怎么做</dt><dd>按 (语种, 原文) 做哈希缓存，<b>同一条只译一次</b>——这才是成本的真开关；单轮上限 200 条，超出留到下一轮；失败一律回退原文，绝不阻断抓取。</dd>
+</dl></div>
+
+<h3>3.3 聚类层（最容易出错、也最值钱的一段）</h3>
+
+<div class="term"><b>簇（cluster）</b><dl>
+<dt>是什么</dt><dd>一个「事件」。多家媒体报同一件事的多篇稿子，归并成一个簇；页面上一行 = 一个簇，不是一篇稿。</dd>
+<dt>怎么做</dt><dd>72 小时窗口内比较，用并查集（union-find）逐步合并；每个簇选一篇当「领头稿」，标题取它的。</dd>
+</dl></div>
+
+<div class="term"><b>n_items 与 n_groups</b><dl>
+<dt>是什么</dt><dd><code>n_items</code> = 这个簇里有几篇稿子；<code>n_groups</code> = 其中有<b>几个互相独立的信源集团</b>（且只数采编/通讯社角色）。</dd>
+<dt>为什么</dt><dd>印证只认后者。8 篇稿子如果全来自同一集团的不同频道，<code>n_groups</code> 仍然是 1。</dd>
+<dt>注意</dt><dd><code>n_groups=0</code> 不是 bug：一个全是官方公告或全是聚合站的簇，按定义就没有采编来源。</dd>
+</dl></div>
+
+<div class="term"><b>「同一件事被拆成 13 个簇」（拆簇 / 召回不足）</b><dl>
+<dt>是什么</dt><dd>聚类失败的一种：12 家媒体确实都报了「OpenAI 今年不会上市」，但因为各家标题措辞不同，二元组重合度不够，<b>它们没被并到一起</b>，散成了 13 个簇。</dd>
+<dt>为什么这是严重问题</dt><dd>后果不是「界面上多了几行」，而是<b>每一个碎簇都只有 1 篇稿</b>，于是每一个都被标成「单源待证」。系统对着一件 12 家共同报道的事，给出了 13 个「孤证」结论——这是把真话标成了可疑。</dd>
+<dt>怎么修的</dt><dd>加了一条「同脚本改写稿补召回」规则：词面相似度只要 ≥ 0.20，且<b>同实体 + 同事件类型</b>，且没有期次冲突（9 月更新 vs 8 月更新）、没有互斥数字，就认为是同一件事。修完这件事的簇并到了一起。</dd>
+<dt>反面风险</dt><dd>0.20 这么低的门槛很容易误并，所以它必须同时满足实体、事件、期次、数字四道结构性校验才生效——自查时确实抓到过「9 月微软更新」和「8 月微软更新」被并的例子，那道「期次冲突」校验就是为它加的。</dd>
+</dl></div>
+
+<div class="term"><b>漂移（drift）与防漂移</b><dl>
+<dt>是什么</dt><dd>并查集是链式的：A 像 B、B 像 C，于是 A 和 C 也进了同一个簇——哪怕 A 和 C 根本不是一件事。这叫漂移。</dd>
+<dt>怎么做</dt><dd>合并前额外检查「新稿和这个簇最早的那篇（种子稿）是否也够像」，不够像就不并。</dd>
+<dt>负结果留档</dt><dd>试过放宽这道检查（想换点召回），实测印证率 0.0259 → 0.0260，没有收益，于是<b>把改动全部删掉，把这个结论写进函数注释</b>。免得以后有人再试一遍。</dd>
+</dl></div>
+
+<div class="term"><b>汇总稿（digest）</b><dl>
+<dt>是什么</dt><dd>「IT早报 0914：A事；B事；C事……」这类一条标题打包 N 件事的稿子。</dd>
+<dt>为什么它是毒</dt><dd>两头都害：<b>① 假印证</b>——它和任何一件事都沾点关系，会把不相干的簇焊在一起，曾有一个 8 篇稿、2 个独立集团的簇，全靠汇总稿粘着；<b>② 抢头条</b>——它标题长、信息多，容易被选成领头稿，用户看到的就是一堆「早报」标题。</dd>
+<dt>怎么做</dt><dd>识别汇总稿标记词（早报/晚报/roundup/in brief/im Überblick…）或标题里有 ≥2 个分号类分隔符；命中后<b>不许参与跨簇桥接，也不许当领头稿</b>。上线后线上前 120 条里的汇总稿标题从 <b>34 条降到 0 条</b>。</dd>
+</dl></div>
+
+<h3>3.4 跨语言层（「错桥」到底是什么）</h3>
+
+<div class="term"><b>脚本（script）≠ 语言</b><dl>
+<dt>是什么</dt><dd>「脚本」指书写系统：中日韩汉字是 CJK，英法德葡是拉丁。中文和英文是<b>跨脚本</b>；英文和德文是<b>同脚本不同语言</b>。</dd>
+<dt>为什么要分</dt><dd>两种情况的技术手段完全不同：同脚本还有共同字符可比（词面相似度还管用），跨脚本一个字符都不重合，只能另找办法。</dd>
+</dl></div>
+
+<div class="term"><b>跨脚本桥（bridge）</b><dl>
+<dt>是什么</dt><dd>让中文稿和英文稿被认成同一件事的专用通道。既然字面没法比，就比<b>结构</b>：是否讲了同一个实体（英伟达 ↔ Nvidia），是否是同一类事件（发布 / 涨价 / 起诉 / 上市）。</dd>
+<dt>怎么做</dt><dd>一份人工维护的实体与事件类型对照表。判定条件是<b>三个都要满足</b>：脚本不同、共享实体、共享事件类型。<b>没有词面兜底</b>——宁可漏，不可错。</dd>
+<dt>为什么这么保守</dt><dd>因为桥是「合并」，一旦搭错，两件不相干的事会被当成互相印证。所以这份词表有一道精度闸门：金标集上配对精度必须 ≥ 0.95（当前 1.0）。</dd>
+</dl></div>
+
+<div class="term"><b>错桥（false bridge）</b><dl>
+<dt>是什么</dt><dd>桥搭错了：两篇讲不同事情的稿子，因为碰巧实体和事件类型都对得上，被并成一个簇。</dd>
+<dt>典型场景</dt><dd>词表里加一个太宽的事件词，比如「合作」。「A 与 B 合作」和「C 与 D 合作」都命中「合作」，如果实体又有重叠，就桥上了。</dd>
+<dt>实测</dt><dd>为了提高 AI 印证率，试过往词表里加 AI 类事件词：多出 8 座桥，其中<b>只有约 1 座是对的</b>，精度 0.17，远低于 0.95 的闸门 → 放弃，并把这个结论写进代码注释，防止下次再试。</dd>
+</dl></div>
+
+<div class="term"><b>「含所有错桥」（上界实验 / ablation）</b><dl>
+<dt>是什么</dt><dd>这是我做实验时的一句口径说明，不是线上配置。意思是：<b>我故意把桥接的所有限制全部拆掉、连明显搭错的桥也一律算进去</b>，看印证率最多能被推到多少。</dd>
+<dt>为什么要这么量</dt><dd>为了拿到一个<b>理论上限</b>。因为这种「作弊版」的结果一定优于任何正经实现，所以如果连它都只到 0.0317，那就证明「继续优化聚类算法」这条路根本走不到 0.10——瓶颈不在算法。这是一个用来<b>否证</b>方向的实验，不是一个候选方案。</dd>
+<dt>结论</dt><dd>桥接全开（含所有错桥）0.0317、同脚本补召回 0.0274、放宽防漂移 0.0260 —— 每条路都卡在 0.03 上下。天花板 ≈ 0.032。</dd>
+</dl></div>
+
+<div class="term"><b>金标集（gold set）与精度 / 召回 / B-cubed F1</b><dl>
+<dt>是什么</dt><dd>一份人工标好「这两条是不是同一件事」的样本集（当前 19 个实体 × 14 类事件 = <b>532 对</b>），用来给聚类算法打分。</dd>
+<dt>三个指标</dt><dd><b>精度（precision）</b>：判成同一件事的里面，有多少真的是（错并 = 掉精度）。<b>召回（recall）</b>：真的同一件事里，有多少被找出来了（拆簇 = 掉召回）。<b>B-cubed F1</b>：聚类专用的综合分，逐条稿子算它所在簇的对错再平均，比只看配对更贴近「用户看到的簇干不干净」。</dd>
+<dt>当前</dt><dd>精度 1.0 / 召回 1.0 / B-cubed F1 1.0，且这三个数是<b>闸门</b>：掉下去 CI 直接失败。</dd>
+</dl></div>
+
+<h3>3.5 可信度层</h3>
+
+<div class="term"><b>四维加权</b><dl>
+<dt>公式</dt><dd>可信度 = <b>0.40</b> × 信源权威 + <b>0.30</b> × 独立交叉印证 + <b>0.20</b> × 内容质量 + <b>0.10</b> × 时间一致性。</dd>
+<dt>内容质量怎么算</dt><dd>规则层词表，故意保持可读可改：标题党词（震惊/竟然/史上最…）扣分、传闻措辞（网传/疑似/知情人士）扣分、明确出处（据新华社/公告/数据显示）加分。有明确出处的「疑似」惩罚减半——那是负责任的转述，不是造谣。</dd>
+<dt>时间一致性</dt><dd>各家在 6 小时内集中报道 → 满分；跨度超过 48 小时 → 疑似旧闻回炒，降分；发布时间在未来 → 元数据可疑。</dd>
+</dl></div>
+
+<div class="term"><b>印证得分曲线</b><dl>
+<dt>公式</dt><dd><code>1 − e^(−0.85 × (独立集团数 − 1))</code></dd>
+<dt>为什么用曲线不用线性</dt><dd>从 1 家到 2 家是<b>质变</b>（孤证 → 有人证实），从 8 家到 9 家几乎没有新信息。指数饱和曲线正好表达这件事：第二家贡献最大，之后边际递减。</dd>
+<dt>地板值</dt><dd>官方源 0.25、通讯社 0.15。它们是源头，不该因为「只有一家在说」被打成孤证；但也只给有限地板，不假装等于多源印证。</dd>
+</dl></div>
+
+<div class="term"><b>可信度四档</b><dl>
+<dt>分档</dt><dd>≥75 多源印证（CONFIRMED）／≥60 较可信（LIKELY）／≥40 单源待证（SINGLE）／其余 低可信（LOW）。</dd>
+</dl></div>
+
+<div class="term"><b>存疑度（doubt）——另一个轴，不要和可信度混</b><dl>
+<dt>是什么</dt><dd>可信度回答「这件事有多少人证实」；存疑度回答「这条稿子本身有没有可疑的地方」（措辞、来源标注、逻辑）。</dd>
+<dt>为什么必须分开</dt><dd>两者会同时出现且互不蕴含：一条八家印证的事，标题仍可能写得极其情绪化；一条孤证也可能写得极为规范。合成一个数就把信息毁了。页面上明确写着「这是两个独立的轴」，而且<b>存疑的只标不藏</b>。</dd>
+<dt>实现细节</dt><dd>两个轴共用同一次词表匹配结果。如果各自匹配一遍，两处词表迟早分叉，页面上就会出现「内容质量说有标题党、存疑度说没有」——匹配只做一次，判断可以有两套。</dd>
+</dl></div>
+
+<h3>3.6 排序层</h3>
+
+<div class="term"><b>rank（排序分）与半衰期</b><dl>
+<dt>公式</dt><dd>rank = 0.55 × 可信度 + 0.45 × 相关性，再乘以时效衰减（半衰期 <b>18 小时</b>：18 小时前的事权重打对折）。</dd>
+<dt>为什么相关性要独立</dt><dd>「真」和「有用」是两件事。明星官宣是真的，但对一个看科技与宏观的人是噪音。相关性独立于可信度计算，真而无用的会被排到后面——但仍然在列表里，不删。</dd>
+</dl></div>
+
+<h3>3.7 翻译层（以及那笔 token 账单）</h3>
+
+<div class="term"><b>两层翻译，用途完全不同</b><dl>
+<dt>canonical_en</dt><dd>外文 → 英文，<b>给机器用</b>：让它能进英文主聚类、能走 zh↔en 桥。用户看不到。</dd>
+<dt>display_zh</dt><dd>外文（含英文）→ 中文，<b>给人看</b>：默认全中文展示，原文列一字不动，前端可一键切回原文。</dd>
+<dt>共同护栏</dt><dd>按哈希缓存（同一条只译一次）、单轮条数上限、失败回退原文、真实 token 逐轮落库可审计。</dd>
+</dl></div>
+
+<div class="term"><b>prompt / completion token 与 max_tokens</b><dl>
+<dt>是什么</dt><dd>大模型按 token 计费：<code>prompt_tokens</code> 是喂进去的，<code>completion_tokens</code> 是生成出来的。<code>max_tokens</code> 是「最多生成多少」的上限。</dd>
+<dt>为什么重要</dt><dd>下面那个坑就藏在这两个概念的缝里。</dd>
+</dl></div>
+
+<div class="term"><b>reasoning tokens（思考 token）—— 九成账单花在看不见的地方</b><dl>
+<dt>是什么</dt><dd>推理模型在给出答案之前会先「想」一段，这段思考过程也是生成出来的 token，<b>也要付钱</b>，但通常不返回给你看。它算在 <code>completion_tokens</code> 里，明细字段叫 <code>reasoning_tokens</code>。</dd>
+<dt>坑在哪</dt><dd>我们用的翻译模型<b>默认开着思考</b>。实测同一条标题：<code>completion=669</code>，其中 <code>reasoning=641</code>——<b>96% 的钱花在思考上，而翻译根本不需要思考</b>。</dd>
+<dt>更要命的第二层</dt><dd>思考会<b>吃掉 max_tokens</b>。标题上限 200、正文上限 1024，思考先占掉几百，真正的译文就被<b>截断</b>了。三条测试标题里有两条 completion 正好等于 200——顶到上限，译文不完整。这不只是贵，是错。</dd>
+<dt>怎么修</dt><dd>请求里显式关掉思考。注意：这个参数必须放在请求体<b>顶层</b>，OpenAI SDK 习惯的 <code>extra_body</code> 写法在这个接口上会被<b>静默忽略</b>（写了没报错，也没生效——最难查的一类问题）。另外做了兜底：万一换成不支持这个参数的模型，去掉它重试一次，不让一个优化参数搞死整条翻译链路。</dd>
+<dt>效果</dt><dd>正文 1074 → 409 tokens／标题 398 → 116／canonical 619 → 92.5，<b>整体降约 69%</b>；单轮流水线 1037s → 374s，快 2.8 倍。<b>译文一字不差</b>——同一段路透正文，开/关思考译出来的 209 字完全一致，连结尾句都一样。</dd>
+</dl></div>
+
+<h3>3.8 朗读层（老人版）</h3>
+
+<div class="term"><b>TTS（文字转语音）：两套实现，一套降级链</b><dl>
+<dt>现在实际在用哪套</dt><dd><b>浏览器自带的本地语音</b>（Web Speech API 的 <code>speechSynthesis</code>）。零成本、纯本地、不上传文字。</dd>
+<dt>云端那套呢</dt><dd>代码、计费闸门、缓存全部就绪，但<b>还没真正启用</b>：手上这把 key 所在地域的模型目录里列着语音模型，实际调用一直返回 InternalError（同一把 key 打翻译模型正常）——即「列了但没真开」。等它可用或换一把 key，只改三行环境变量即可切换，不动代码。</dd>
+<dt>降级链</dt><dd>云端合成 → 撞每日上限或失败 → 静默切浏览器本地语音 → 连本地中文语音都没有 → 给 <code>body</code> 加 <code>no-tts</code>，把朗读按钮整个隐藏。<b>不留一个点了没反应的按钮</b>。</dd>
+<dt>成本闸门</dt><dd>语音<b>按字符</b>计费（不是 token）。两道每日硬闸同时生效：100 条/天 + 60000 字符/天（= 100 条 × 单条 600 字满配）。撞任一道就回退本地语音，不报错、不拒绝服务。</dd>
+</dl></div>
+
+<div class="term"><b>连读队列，以及一个反直觉的 bug</b><dl>
+<dt>是什么</dt><dd>老人版的「连读全部」：从第一条一直念下去，可暂停/继续/上一条/下一条/停止，底部有常驻播报条显示「第 N / M 条」。</dd>
+<dt>队列存 id，不存下标</dt><dd>切筛选、切中英文都会重绘列表，下标会失效、id 不会——否则会「读串」。</dd>
+<dt>那个反直觉的坑</dt><dd><code>speechSynthesis.cancel()</code> 会<b>立刻同步触发上一条的 onend 回调</b>。而 onend 的含义是「这条念完了，念下一条」——于是「停止」变成了「快进」。修法是加一个代号（generation counter），cancel 时递增，把那次迟到的回调作废。</dd>
+<dt>另一个平台坑</dt><dd>部分安卓浏览器的 <code>pause()</code> 是空操作（调了不暂停）。所以 220 毫秒后复查：如果还在念且没暂停，就硬停下来，继续时把这条重念一遍。</dd>
+</dl></div>
+
+<h3>3.9 质量闸门层（自检怎么做的）</h3>
+
+<div class="term"><b>闸门（gate）与体检单（scorecard）</b><dl>
+<dt>是什么</dt><dd>54 条可自动判定的断言，每条有名字、当前值、目标值、通过/提示/失败三态。当前 51 通过 / 3 提示 / 0 失败。</dd>
+<dt>两种档位</dt><dd>硬闸门（required）不达标 = <b>fail</b>，代表系统真出问题了；提示档（advisory）不达标 = <b>warn</b>，代表值得看一眼但不是故障。分级的意义是：<b>如果什么都算失败，那失败就不再意味着什么</b>。</dd>
+</dl></div>
+
+<div class="term"><b><code>pipeline_freshness_seconds</code>（流水线新鲜度，秒）</b><dl>
+<dt>是什么</dt><dd>字面直译是「流水线新鲜度秒数」，准确含义是：<b>距离最近一次「成功跑完」的流水线，已经过去了多少秒</b>。只数跑完并成功的轮次（跑挂的、跑一半被打断的不算）。</dd>
+<dt>为什么需要它</dt><dd>整个系统最危险的故障不是报错，是<b>安静地停了</b>——页面照样打开、新闻照样在，只是全是几小时前的旧闻，没有任何红字。这道闸门就是专门抓这种「静默停摆」的。</dd>
+<dt>阈值怎么定的</dt><dd>刷新周期 900 秒，于是分两档：<b>超过 2 个周期（1800s）→ 提示</b>，<b>超过 4 个周期（3600s）→ 失败</b>。</dd>
+<dt>为什么不把硬闸设在 2×</dt><dd>因为量过：9.4 天 842 轮里，轮间隔中位数 900s、单轮耗时中位 148s，但有 <b>21 次（2.5%）间隔超过 1800s</b>（最长 3154s，多是重启或某轮跑久）。硬闸卡在 2× 会被这些正常抖动反复触发，面板天天显示「存在硬性失败」，<b>真正的停摆反而被淹掉</b>。4×（1 小时）在这 9.4 天里 0 次误报，仍然抓得住真停摆。</dd>
+<dt>顺带把根因也消掉了</dt><dd>抖动的来源是单轮耗时（曾达 1037s）逼近 900s 的周期。翻译关掉思考后单轮降到 374s，抖动源本身没了。<b>先量、再定阈值、顺手修根因</b>，比只调阈值有用。</dd>
+<dt>当前读数</dt><dd>335 秒，两档都通过。</dd>
+</dl></div>
+
+<div class="term"><b><code>ai_independent_corroboration_rate</code>（AI 事件的独立印证率）</b><dl>
+<dt>定义</dt><dd>最近 72 小时带 AI 主题的簇里，<code>n_groups ≥ 2</code>（至少两个互相独立的采编集团各自报过）的比例。当前 <b>0.0271</b>。</dd>
+<dt>目标为什么设在 0.025</dt><dd>这是<b>回归地板</b>，不是愿望值。愿望是 0.10，实测天花板 0.032。把目标设成 0.10 的后果是它永远黄着——既看不出退步，也看不出进展，最后没人再看它。设成 0.025 才有意义：掉下去就是聚类真的退化了。愿望值、实测上限、真正成因三样都写在闸门的说明文字里，不藏。</dd>
+</dl></div>
+
+<div class="term"><b><code>ai_single_source_share</code>（只有一篇稿的 AI 事件占比）</b><dl>
+<dt>定义</dt><dd>最近 72 小时 AI 簇里 <code>n_items ≤ 1</code> 的比例。当前 <b>0.8586</b>，目标 ≤0.80（提示档，现在是 warn）。</dd>
+<dt>为什么专门立一条</dt><dd>因为它才是<b>可行动的那个数</b>。85% 的 AI 事件只有一篇稿子——没有第二家，任何聚类算法都造不出第二个独立集团。把这条摆在印证率旁边，是为了让下一个看板子的人<b>不会再去聚类算法里找答案</b>。</dd>
+</dl></div>
+
+<h3>3.10 方法论层（这些结论是怎么得出来的）</h3>
+
+<div class="term"><b>离线重放（replay）</b><dl>
+<dt>是什么</dt><dd>把生产库最近 72 小时的全部条目（9680 条）只读导出，在本地把聚类算法<b>整条重跑</b>，直接看指标变化。</dd>
+<dt>为什么必须这样</dt><dd>否则每验证一个想法就要改线上、等一轮、看结果——慢，而且污染生产数据。重放让「换个阈值」从一天变成一分钟，也让每个数字可复现。</dd>
+</dl></div>
+
+<div class="term"><b>上界实验 / 否证式实验</b><dl>
+<dt>是什么</dt><dd>不去问「这个方案能带来多少提升」，而是问「<b>把这条路走到最极端（哪怕作弊），最多能到多少</b>」。</dd>
+<dt>价值</dt><dd>一次实验否掉一整个方向。前面「含所有错桥」就是这类：它证明的不是某个实现不行，而是<b>整条聚类优化路线都到不了 0.10</b>，从此不必再在这个方向上花时间。</dd>
+</dl></div>
+
+<div class="term"><b>负结果留档</b><dl>
+<dt>是什么</dt><dd>试过、量过、确认没用的方案，把「试过什么、量到多少、为什么放弃」写进代码注释或闸门说明。</dd>
+<dt>已留档的三条</dt><dd>① 放宽防漂移：0.0259 → 0.0260，无收益，代码已删、结论留注释；② 给桥接词表加 AI 事件词：精度 0.17 ≪ 0.95 闸门，放弃；③ 把中文标题也译成英文再聚类：0.0270 → <b>0.0239 反而变差</b>（中文靠字符二元组，译成英文变词级比对，同一件事的两篇中文会译出不同措辞，同语言去重反而退化），建议不开，顺带省约 14 万 tokens/天。</dd>
+</dl></div>
+
+<h2>四、三个真实案例，把术语串起来</h2>
+
+<div class="box bad">
+  <b>案例一：一件事，13 个「孤证」</b>
+  <p>「OpenAI 今年不会上市」这件事有 12 家独立媒体报道。但各家标题措辞不同，词面相似度落在 0.20–0.23 这一段，
+  低于 0.42 的合并阈值 → 散成 <b>13 个簇</b> → 每个簇 1 篇稿 → 每个都被标成「单源待证」。
+  <b>系统把一件 12 家共同证实的事，讲成了 13 个孤证。</b></p>
+  <p style="margin-bottom:0">修法：同脚本改写稿补召回（阈值 0.20 + 同实体 + 同事件 + 期次/数字不冲突）。
+  阈值 0.20 是把 72 小时语料里够格的 61 对<b>逐条人工看过</b>定下来的，不是调参调出来的。</p>
+</div>
+
+<div class="box warn">
+  <b>案例二：早报把印证率刷高了</b>
+  <p>「IT早报 0914：A；B；C……」这类汇总稿一条顶八件事。它和谁都沾点关系，于是<b>把不相干的簇焊到一起</b>——
+  曾有一个显示「8 篇稿、2 个独立集团」的簇，全靠早报粘着，实际上没有任何两家在报同一件事。
+  同时它标题最长、信息最多，还容易被选成领头稿，用户看到的就是满屏「早报」。</p>
+  <p style="margin-bottom:0">修法：识别汇总稿（标记词 + 分隔符密度），<b>不许桥接、不许当领头稿</b>。
+  线上前 120 条里的汇总稿标题 <b>34 条 → 0 条</b>。</p>
+</div>
+
+<div class="box good">
+  <b>案例三：九成翻译费花在看不见的思考上</b>
+  <p>同一段路透社正文，同模型同接口，唯一差别是开/关「思考」：</p>
+  <table>
+    <tr><th>　</th><th>耗时</th><th>completion</th><th>其中 reasoning</th><th>译文</th></tr>
+    <tr><td>思考开（默认）</td><td class="num">17.4s</td><td class="num">1830</td><td class="num">1694</td><td>209 字</td></tr>
+    <tr><td>思考关</td><td class="num">2.1s</td><td class="num">129</td><td class="num">0</td><td>209 字，<b>一字不差</b></td></tr>
+  </table>
+  <p style="margin-bottom:0">同样的译文，14 倍的价钱、8 倍的时间。而且思考会吃掉 <code>max_tokens</code> 把译文截断——
+  所以关掉它同时是<b>省钱</b>和<b>修正确性</b>。上线后整体 token 降约 69%，单轮流水线 1037s → 374s。</p>
+</div>
+
+<h2>五、诚实的边界：为什么 0.10 的印证率做不到</h2>
+
+<p>愿望是「AI 新闻里 10% 的事件有两家以上独立媒体印证」。实测每一条聚类杠杆（都在 72 小时、9680 条、1116 个 AI 簇上离线重放）：</p>
+
+<table>
+  <tr><th>做法</th><th>印证率</th><th>说明</th></tr>
+  <tr><td>基线</td><td class="num">≈0.024</td><td>修改前</td></tr>
+  <tr><td>放宽防漂移</td><td class="num">0.0260</td><td>无实质收益，已撤回</td></tr>
+  <tr><td>同脚本补召回（已上线）</td><td class="num">0.0274</td><td>顺带修掉「13 个簇」那类拆簇</td></tr>
+  <tr><td>桥接全开，<b>含所有错桥</b></td><td class="num">0.0317</td><td>作弊上界，不可用；用来<b>否证</b>方向</td></tr>
+  <tr><td>中文标题也译成英文</td><td class="num">0.0239</td><td><b>反而变差</b>，建议不开</td></tr>
+</table>
+
+<div class="box tldr">
+  <p style="margin-top:0"><b>结论：天花板约 0.032，0.10 靠聚类算法到不了。</b></p>
+  <p style="margin-bottom:0">真正的原因是信源结构：<b>85% 的 AI 事件只有一篇稿子</b>。
+  没有第二家报道，任何算法都造不出第二个独立集团——这不是聚类问题，是「我们订的报纸里，没几家会同时报同一件 AI 事」。
+  出路只有一条：补上会同步覆盖同一批 AI 头条的主流媒体与通讯社（Reuters Technology、AP Tech、Bloomberg Tech、FT Tech 等）。
+  这已经立成独立需求，验收标准是 <code>ai_single_source_share</code> ≤ 0.80 且印证率 ≥ 0.04。</p>
+</div>
+
+<h2>六、一页速查表</h2>
+
+<table>
+  <tr><th style="width:34%">术语</th><th>一句话</th></tr>
+  <tr><td>簇 / cluster</td><td>一个事件；多家报同一件事的稿子并成一个，页面一行 = 一个簇</td></tr>
+  <tr><td>n_items / n_groups</td><td>几篇稿 / 其中几个互相独立的采编集团（印证只认后者）</td></tr>
+  <tr><td>拆簇（13 个簇）</td><td>同一件事没并到一起，于是每个碎片都被标成「孤证」</td></tr>
+  <tr><td>漂移 / 防漂移</td><td>A像B、B像C于是A和C也并了；靠「和种子稿也要够像」拦住</td></tr>
+  <tr><td>汇总稿 / digest</td><td>早报类一稿多事；会假造印证并抢头条，已禁止桥接与当领头稿</td></tr>
+  <tr><td>脚本 / script</td><td>书写系统（CJK vs 拉丁），不是语言</td></tr>
+  <tr><td>跨脚本桥 / bridge</td><td>中英文没有共同字符，靠「同实体 + 同事件类型」搭桥</td></tr>
+  <tr><td>错桥 / false bridge</td><td>桥搭错，两件不同的事被当成互相印证</td></tr>
+  <tr><td>含所有错桥</td><td>实验口径：故意连错桥都算，用来量理论上限、否证方向</td></tr>
+  <tr><td>Jaccard</td><td>交集 ÷ 并集，衡量两句话字面有多像（主阈值 0.42）</td></tr>
+  <tr><td>simhash / 汉明距离</td><td>64 位文本指纹 / 差几位；用于快速粗筛（≤6）</td></tr>
+  <tr><td>canonical_title</td><td>给机器比对用的英文译文；用户看到的仍是原文</td></tr>
+  <tr><td>存疑度</td><td>与可信度平行的另一个轴：这条稿本身可疑吗；只标不藏</td></tr>
+  <tr><td>reasoning tokens</td><td>模型「思考」消耗的 token，看不见但要付钱，还会挤掉译文</td></tr>
+  <tr><td>pipeline_freshness_seconds</td><td>距最近一次成功跑完流水线过了多少秒；专抓静默停摆</td></tr>
+  <tr><td>required / advisory</td><td>硬闸门（fail）/ 提示档（warn）；不分级则失败失去意义</td></tr>
+  <tr><td>回归地板</td><td>目标设在实测能力之下，用来发现退步，而不是表达愿望</td></tr>
+  <tr><td>离线重放 / replay</td><td>用生产语料在本地重跑算法，让每个结论可复现</td></tr>
+  <tr><td>上界实验</td><td>把一条路走到极端（哪怕作弊）以否证整个方向</td></tr>
+  <tr><td>负结果留档</td><td>把「试过、没用、为什么」写进注释，防止重复劳动</td></tr>
+</table>
+
+<div class="foot">
+  <p>口径说明：标注为「当前」的读数取自线上 <code>/api/quality</code> 实时体检单；
+  标注为「实测」的来自 72 小时生产语料（9680 条 / 1116 个 AI 簇）离线重放，或对同一模型接口的对照调用。
+  文中不含任何密钥、口令与内部地址。</p>
+</div>
+
+</div>
+</body>
+</html>
